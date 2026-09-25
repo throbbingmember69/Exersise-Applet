@@ -1,6 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS } from '@/domain/settings/registry'
-import { alertTimes, extendRest, restView, startRest, type RestTimer } from './restTimer'
+import {
+  alertTimes as alertTimesRaw,
+  extendRest as extendRestRaw,
+  restView as restViewRaw,
+  startRest as startRestRaw,
+  type RestTimer,
+} from './restTimer'
+
+/** Recursively freezes a test input so any mutation throws (proves the functions are pure). */
+function deepFreeze<T>(x: T, seen = new WeakSet<object>()): T {
+  if (x !== null && typeof x === 'object' && !seen.has(x)) {
+    seen.add(x)
+    for (const v of Object.values(x)) deepFreeze(v, seen)
+    Object.freeze(x)
+  }
+  return x
+}
+
+// The rest-timer functions, called on frozen inputs.
+const startRest: typeof startRestRaw = (now, regime) => startRestRaw(now, deepFreeze(regime))
+const extendRest: typeof extendRestRaw = (t, s) => extendRestRaw(deepFreeze(t), deepFreeze(s))
+const restView: typeof restViewRaw = (t, now) => restViewRaw(deepFreeze(t), now)
+const alertTimes: typeof alertTimesRaw = (t) => alertTimesRaw(deepFreeze(t))
 
 const T0 = Date.UTC(2026, 8, 28, 17)
 const SEC = 1000

@@ -28,13 +28,17 @@ describe('dropLoad', () => {
     expect(dropLoad(700, 2.5, 17.5, false)).toBe(700 - 49 * 2.5)
   })
 
-  it('treats a 0% cut as no cut', () => {
-    expect(dropLoad(220, 10, 0, false)).toBe(220)
+  it('still drops the one-step minimum at a 0% cut (no exception in the formula)', () => {
+    expect(dropLoad(220, 10, 0, false)).toBe(210)
+    expect(dropLoad(50, 5, 0, true)).toBe(45)
   })
 
-  it('rejects a non-positive step', () => {
+  it('rejects a non-positive step and a negative or non-finite pct', () => {
     expect(() => dropLoad(220, 0, 10, false)).toThrow(RangeError)
     expect(() => dropLoad(220, -5, 10, false)).toThrow(RangeError)
+    expect(() => dropLoad(220, 10, -1, false)).toThrow(RangeError)
+    expect(() => dropLoad(220, 10, Number.NaN, false)).toThrow(RangeError)
+    expect(() => dropLoad(220, 10, Number.POSITIVE_INFINITY, false)).toThrow(RangeError)
   })
 
   it('always drops a whole number of steps, at least one and no more than pct allows', () => {
@@ -42,7 +46,7 @@ describe('dropLoad', () => {
       fc.property(
         fc.integer({ min: 0, max: 400 }),
         fc.constantFrom(1, 2.5, 5, 10),
-        fc.double({ min: 1, max: 30, noNaN: true }),
+        fc.double({ min: 0, max: 30, noNaN: true }),
         (k, stepLb, pct) => {
           const base = k * stepLb
           const raw = dropLoad(base, stepLb, pct, true)

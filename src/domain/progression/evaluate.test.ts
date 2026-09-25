@@ -2,19 +2,33 @@ import { describe, expect, it } from 'vitest'
 import { parseLocalDate } from '@/domain/dates'
 import { DEFAULT_SETTINGS } from '@/domain/settings/registry'
 import type { TrackSession, TrackStart, TrackState, WorkingSet } from '@/domain/types'
-import { evaluateSession, initialTrackState, replayTrack, toWorkingSets } from './evaluate'
+import {
+  evaluateSession as evaluateSessionRaw,
+  initialTrackState,
+  replayTrack as replayTrackRaw,
+  toWorkingSets as toWorkingSetsRaw,
+} from './evaluate'
 
 const S = DEFAULT_SETTINGS
 const START: TrackStart = { startLoadLb: 220, calibrate: false }
 const CALIBRATE: TrackStart = { startLoadLb: null, calibrate: true }
 
-function deepFreeze<T>(x: T): T {
-  if (x !== null && typeof x === 'object' && !Object.isFrozen(x)) {
+/** Recursively freezes a test input so any mutation throws (proves the functions are pure). */
+function deepFreeze<T>(x: T, seen = new WeakSet<object>()): T {
+  if (x !== null && typeof x === 'object' && !seen.has(x)) {
+    seen.add(x)
+    for (const v of Object.values(x)) deepFreeze(v, seen)
     Object.freeze(x)
-    for (const v of Object.values(x)) deepFreeze(v)
   }
   return x
 }
+
+// The engine functions, called on frozen inputs.
+const evaluateSession: typeof evaluateSessionRaw = (prev, h, start, settings) =>
+  evaluateSessionRaw(deepFreeze(prev), deepFreeze(h), deepFreeze(start), deepFreeze(settings))
+const replayTrack: typeof replayTrackRaw = (start, history, settings) =>
+  replayTrackRaw(deepFreeze(start), deepFreeze(history), deepFreeze(settings))
+const toWorkingSets: typeof toWorkingSetsRaw = (logs) => toWorkingSetsRaw(deepFreeze(logs))
 
 function sets(...pairs: [number, number][]): WorkingSet[] {
   return pairs.map(([loadLb, reps], setIndex) => ({ setIndex, loadLb, reps }))

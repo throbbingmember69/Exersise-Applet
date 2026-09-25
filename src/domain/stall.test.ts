@@ -3,18 +3,31 @@ import { addDays, parseLocalDate } from '@/domain/dates'
 import { epley, type MetricValue } from '@/domain/e1rm'
 import { DEFAULT_SETTINGS } from '@/domain/settings/registry'
 import type { WorkingSet } from '@/domain/types'
-import { detectStall, seriesPoints, type MetricPoint, type SeriesSession } from './stall'
+import {
+  detectStall as detectStallRaw,
+  seriesPoints as seriesPointsRaw,
+  type MetricPoint,
+  type SeriesSession,
+} from './stall'
 
 const DAY0 = parseLocalDate('2026-09-28')
 const WINDOW = DEFAULT_SETTINGS.stallWindow
 
-function deepFreeze<T>(x: T): T {
-  if (x !== null && typeof x === 'object' && !Object.isFrozen(x)) {
+/** Recursively freezes a test input so any mutation throws (proves the functions are pure). */
+function deepFreeze<T>(x: T, seen = new WeakSet<object>()): T {
+  if (x !== null && typeof x === 'object' && !seen.has(x)) {
+    seen.add(x)
+    for (const v of Object.values(x)) deepFreeze(v, seen)
     Object.freeze(x)
-    for (const v of Object.values(x)) deepFreeze(v)
   }
   return x
 }
+
+// seriesPoints and detectStall, called on frozen inputs.
+const seriesPoints: typeof seriesPointsRaw = (sessions, kind, ctx, repMin) =>
+  seriesPointsRaw(deepFreeze(sessions), kind, deepFreeze(ctx), repMin)
+const detectStall: typeof detectStallRaw = (points, window) =>
+  detectStallRaw(deepFreeze(points), window)
 
 const sets = (loadLb: number, ...reps: number[]): WorkingSet[] =>
   reps.map((r, setIndex) => ({ setIndex, loadLb, reps: r }))

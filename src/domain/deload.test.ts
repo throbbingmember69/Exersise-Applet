@@ -1,13 +1,34 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SETTINGS, resolveSettings } from '@/domain/settings/registry'
-import { deloadStatus, deloadTrigger } from './deload'
+import { DEFAULT_SETTINGS, resolveSettings, type Settings } from '@/domain/settings/registry'
+import {
+  deloadStatus,
+  deloadTrigger,
+  type DeloadStatusInput,
+  type DeloadTriggerInput,
+} from './deload'
+
+/** Recursively freezes a test input so any mutation throws (proves the functions are pure). */
+function deepFreeze<T>(x: T, seen = new WeakSet<object>()): T {
+  if (x !== null && typeof x === 'object' && !seen.has(x)) {
+    seen.add(x)
+    for (const v of Object.values(x)) deepFreeze(v, seen)
+    Object.freeze(x)
+  }
+  return x
+}
 
 const S = DEFAULT_SETTINGS
 const sessions = (...pain: boolean[]) => pain.map((jointPain, i) => ({ id: `s${i}`, jointPain }))
 
+/** deloadTrigger and deloadStatus on frozen inputs. */
+const triggerOn = (input: DeloadTriggerInput, settings: Settings) =>
+  deloadTrigger(deepFreeze(input), deepFreeze(settings))
+const statusOf = (input: DeloadStatusInput, settings: Settings) =>
+  deloadStatus(deepFreeze(input), deepFreeze(settings))
+
 describe('deloadTrigger', () => {
   it('suggests a deload at 3 concurrent stalls, with a sorted, de-duplicated fingerprint', () => {
-    const r = deloadTrigger(
+    const r = triggerOn(
       {
         stalledSeries: ['ex-ohp|*', 'ex-smith-squat|gym-1', 'ex-deadlift|*', 'ex-ohp|*'],
         recentSessions: sessions(false, false, false),
@@ -23,12 +44,12 @@ describe('deloadTrigger', () => {
 
   it('does not suggest at 2 stalls', () => {
     expect(
-      deloadTrigger({ stalledSeries: ['a|*', 'b|*'], recentSessions: sessions(false) }, S),
+      triggerOn({ stalledSeries: ['a|*', 'b|*'], recentSessions: sessions(false) }, S),
     ).toEqual({ suggest: false, reasons: [], fingerprint: null })
   })
 
   it('suggests on joint pain in 2 of the last 3 sessions (oldest first)', () => {
-    const r = deloadTrigger(
+    const r = triggerOn(
       { stalledSeries: [], recentSessions: sessions(false, true, false, true) },
       S,
     )
@@ -40,7 +61,7 @@ describe('deloadTrigger', () => {
   })
 
   it('ignores joint pain older than the window', () => {
-    const r = deloadTrigger(
+    const r = triggerOn(
       { stalledSeries: [], recentSessions: sessions(true, true, false, false) },
       S,
     )
@@ -48,7 +69,7 @@ describe('deloadTrigger', () => {
   })
 
   it('reports both reasons', () => {
-    const r = deloadTrigger(
+    const r = triggerOn(
       { stalledSeries: ['a|*', 'b|*', 'c|*'], recentSessions: sessions(true, true) },
       S,
     )
@@ -62,28 +83,24 @@ describe('deloadTrigger', () => {
       deloadJointPainHits: 1,
       deloadJointPainWindow: 1,
     })
-    expect(deloadTrigger({ stalledSeries: ['a|*', 'b|*'], recentSessions: [] }, s).suggest).toBe(
+    expect(triggerOn({ stalledSeries: ['a|*', 'b|*'], recentSessions: [] }, s).suggest).toBe(true)
+    expect(triggerOn({ stalledSeries: [], recentSessions: sessions(true, false) }, s).suggest).toBe(
+      false,
+    )
+    expect(triggerOn({ stalledSeries: [], recentSessions: sessions(false, true) }, s).suggest).toBe(
       true,
     )
-    expect(
-      deloadTrigger({ stalledSeries: [], recentSessions: sessions(true, false) }, s).suggest,
-    ).toBe(false)
-    expect(
-      deloadTrigger({ stalledSeries: [], recentSessions: sessions(false, true) }, s).suggest,
-    ).toBe(true)
   })
 
   it('handles an empty joint-pain window', () => {
     const s = { ...S, deloadJointPainWindow: 0, deloadJointPainHits: 1 }
-    expect(deloadTrigger({ stalledSeries: [], recentSessions: sessions(true) }, s).suggest).toBe(
-      false,
-    )
+    expect(triggerOn({ stalledSeries: [], recentSessions: sessions(true) }, s).suggest).toBe(false)
   })
 })
 
 describe('deloadStatus', () => {
   it('is inactive when no deload was accepted', () => {
-    expect(deloadStatus({ acceptedAt: null, endedAt: null, deloadSessionsSince: 0 }, S)).toEqual({
+    expect(statusOf({ acceptedAt: null, endedAt: null, deloadSessionsSince: 0 }, S)).toEqual({
       active: false,
       remaining: 0,
       total: 5,
@@ -92,7 +109,7 @@ describe('deloadStatus', () => {
 
   it('runs for 5 deload sessions', () => {
     const status = (n: number) =>
-      deloadStatus({ acceptedAt: 1_000, endedAt: null, deloadSessionsSince: n }, S)
+      statusOf({ acceptedAt: 1_000, endedAt: null, deloadSessionsSince: n }, S)
     expect(status(0)).toEqual({ active: true, remaining: 5, total: 5 })
     expect(status(2)).toEqual({ active: true, remaining: 3, total: 5 })
     expect(status(4)).toEqual({ active: true, remaining: 1, total: 5 })
@@ -100,10 +117,10 @@ describe('deloadStatus', () => {
   })
 
   it('ends early when ended after it was accepted, but not by an older end', () => {
-    expect(
-      deloadStatus({ acceptedAt: 1_000, endedAt: 2_000, deloadSessionsSince: 1 }, S).active,
-    ).toBe(false)
-    expect(deloadStatus({ acceptedAt: 1_000, endedAt: 500, deloadSessionsSince: 1 }, S)).toEqual({
+    expect(statusOf({ acceptedAt: 1_000, endedAt: 2_000, deloadSessionsSince: 1 }, S).active).toBe(
+      false,
+    )
+    expect(statusOf({ acceptedAt: 1_000, endedAt: 500, deloadSessionsSince: 1 }, S)).toEqual({
       active: true,
       remaining: 4,
       total: 5,
@@ -112,7 +129,7 @@ describe('deloadStatus', () => {
 
   it('uses the configured length', () => {
     const s = resolveSettings({ deloadSessions: 3 })
-    expect(deloadStatus({ acceptedAt: 1, endedAt: null, deloadSessionsSince: 2 }, s)).toEqual({
+    expect(statusOf({ acceptedAt: 1, endedAt: null, deloadSessionsSince: 2 }, s)).toEqual({
       active: true,
       remaining: 1,
       total: 3,

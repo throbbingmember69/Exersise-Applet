@@ -14,6 +14,16 @@ import type {
 import { replayTrack, toWorkingSets } from './evaluate'
 import { deloadPrescription, nextPrescription } from './prefill'
 
+/** Recursively freezes a test input so any mutation throws (proves the engine is pure). */
+function deepFreeze<T>(x: T, seen = new WeakSet<object>()): T {
+  if (x !== null && typeof x === 'object' && !seen.has(x)) {
+    seen.add(x)
+    for (const v of Object.values(x)) deepFreeze(v, seen)
+    Object.freeze(x)
+  }
+  return x
+}
+
 const regime = (sets: number, repMin: number, repMax: number): Regime => ({
   sets,
   repMin,
@@ -99,9 +109,11 @@ function run(
   specs: SessionSpec[],
   settings = DEFAULT_SETTINGS,
 ): { next: NextPrescription; results: SessionResult[] } {
-  const { state, results } = replayTrack(track.start, toHistory(track, specs), settings)
+  deepFreeze(track)
+  const history = deepFreeze(toHistory(track, specs))
+  const { state, results } = replayTrack(track.start, history, deepFreeze(settings))
   const next = nextPrescription(
-    state,
+    deepFreeze(state),
     track.start,
     track.regime,
     track.stepLb,
@@ -249,7 +261,7 @@ describe('progression flowchart', () => {
   it('after a deload the pre-deload suggestion returns', () => {
     const before = run(SMITH_SQUAT, [IN_RANGE]).next
     const during = deloadPrescription(
-      before,
+      deepFreeze(before),
       SMITH_SQUAT.regime,
       SMITH_SQUAT.stepLb,
       SMITH_SQUAT.loadType,
@@ -261,7 +273,7 @@ describe('progression flowchart', () => {
   })
 
   it('warm-ups (and voided sets) are ignored', () => {
-    const logs = [
+    const logs = deepFreeze([
       { setIndex: 0, loadLb: 135, reps: 5, isWarmup: true, voidedAt: null },
       { setIndex: 1, loadLb: 185, reps: 3, isWarmup: true, voidedAt: null },
       { setIndex: 2, loadLb: 220, reps: 10, isWarmup: false, voidedAt: null },
@@ -269,12 +281,11 @@ describe('progression flowchart', () => {
       { setIndex: 4, loadLb: 220, reps: 10, isWarmup: false, voidedAt: null },
       { setIndex: 5, loadLb: 220, reps: 10, isWarmup: false, voidedAt: null },
       { setIndex: 6, loadLb: 220, reps: 11, isWarmup: false, voidedAt: null },
-    ]
-    const history = toHistory(SMITH_SQUAT, [skipped]).map((s) => ({
-      ...s,
-      sets: toWorkingSets(logs),
-    }))
-    const { state } = replayTrack(SMITH_SQUAT.start, history, DEFAULT_SETTINGS)
+    ])
+    const history = deepFreeze(
+      toHistory(SMITH_SQUAT, [skipped]).map((s) => ({ ...s, sets: toWorkingSets(logs) })),
+    )
+    const { state } = replayTrack(deepFreeze(SMITH_SQUAT).start, history, DEFAULT_SETTINGS)
     expect(state).toMatchObject({ lastBranch: 'step', lastBaseLb: 220, missStreak: 0 })
   })
 
