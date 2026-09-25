@@ -21,7 +21,7 @@ const DETERMINISM = [
 ]
 
 export default defineConfig([
-  globalIgnores(['dist', 'dev-dist', 'coverage', 'playwright-report', 'test-results']),
+  globalIgnores(['dist', 'dev-dist', 'coverage', 'playwright-report', 'test-results', '.claude']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
