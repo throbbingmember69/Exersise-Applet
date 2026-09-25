@@ -64,6 +64,14 @@ function records(text: string): Record<string, string>[] {
   return rows.map((r) => Object.fromEntries(header!.map((h, i) => [h, r[i]!])))
 }
 
+/** Recursively freeze a fixture so any mutation by the code under test throws (strict mode). */
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (value === null || typeof value !== 'object' || seen.has(value)) return value
+  seen.add(value)
+  for (const v of Object.values(value)) deepFreeze(v, seen)
+  return Object.freeze(value)
+}
+
 // ── Fixture: one realistic training week ────────────────────────────────────
 
 const d = (s: string) => s as LocalDate
@@ -696,17 +704,85 @@ describe('setsCsv', () => {
     ).toBe(`${SETS_CSV_HEADER.join(',')}\r\n`)
   })
 
-  it('passes the BOM option through and does not mutate its input', () => {
-    const frozen: SetsCsvInput = {
-      sessions: Object.freeze([...sessions]),
-      sessionExercises: Object.freeze([...input.sessionExercises]),
-      setLogs: Object.freeze([...setLogs]),
-      programDays: Object.freeze([...programDays]),
-      gyms: Object.freeze([...gyms]),
-    }
+  it('passes the BOM option through and does not mutate its input (deep-frozen)', () => {
+    const frozen: SetsCsvInput = deepFreeze(structuredClone(input))
     const before = JSON.stringify(frozen)
     expect(setsCsv(frozen, { bom: true })).toBe(`\uFEFF${text}`)
     expect(JSON.stringify(frozen)).toBe(before)
+  })
+
+  it('orders by start time, exercise order and set index even when ids and log times disagree', () => {
+    // Every id and loggedAt below is chosen to sort the WRONG way, so only the brief's keys
+    // (date, session startedAt, session-exercise order, set index) can produce this order.
+    const early = session({ id: 's-z-early', date: d('2026-10-05'), startedAt: at('2026-10-05', 7) })
+    const late = session({ id: 's-a-late', date: d('2026-10-05'), startedAt: at('2026-10-05', 18) })
+    const first = sessionExercise({
+      id: 'sx-z-first',
+      sessionId: early.id,
+      order: 0,
+      exerciseId: 'ex-first',
+      exerciseName: 'First',
+      loadType: 'machine',
+    })
+    const second = sessionExercise({
+      id: 'sx-a-second',
+      sessionId: early.id,
+      order: 1,
+      exerciseId: 'ex-second',
+      exerciseName: 'Second',
+      loadType: 'machine',
+    })
+    const lateEx = sessionExercise({
+      id: 'sx-a-late',
+      sessionId: late.id,
+      order: 0,
+      exerciseId: 'ex-late',
+      exerciseName: 'Late',
+      loadType: 'machine',
+    })
+    const log = (
+      sx: SessionExercise,
+      id: string,
+      setIndex: number,
+      loggedAtMs: number,
+    ): SetLog => ({
+      id,
+      sessionId: sx.sessionId,
+      sessionExerciseId: sx.id,
+      exerciseId: sx.exerciseId,
+      setIndex,
+      loadLb: 100,
+      reps: 10,
+      rir: 1,
+      isWarmup: false,
+      note: '',
+      loggedAt: loggedAtMs,
+      editedAt: null,
+      voidedAt: null,
+    })
+    const sets = [
+      log(lateEx, 'a-0', 0, at('2026-10-05', 6)),
+      log(second, 'b-0', 0, at('2026-10-05', 7, 1)),
+      log(first, 'c-1', 1, at('2026-10-05', 7, 2)), // set 1 logged before set 0
+      log(first, 'd-0', 0, at('2026-10-05', 7, 3)),
+    ]
+    const out = records(
+      setsCsv(
+        deepFreeze({
+          sessions: [late, early],
+          sessionExercises: [lateEx, second, first],
+          setLogs: sets,
+          programDays: [],
+          gyms,
+        }),
+      ),
+    )
+    expect(out.map((r) => `${r.session_id}/${r.exercise_id}/${r.set_index}`)).toEqual([
+      's-z-early/ex-first/0',
+      's-z-early/ex-first/1',
+      's-z-early/ex-second/0',
+      's-a-late/ex-late/0',
+    ])
   })
 })
 
@@ -740,7 +816,7 @@ describe('bodyCsv', () => {
   ]
 
   it('writes the documented columns, date-sorted, voided entries excluded', () => {
-    expect(bodyCsv(Object.freeze(entries))).toBe(
+    expect(bodyCsv(deepFreeze(structuredClone(entries)))).toBe(
       [
         BODY_CSV_HEADER.join(','),
         '2026-09-24,163,14.3,132,55.3,12.7,5,seed,Baseline from the spec (smart scale)',
@@ -801,7 +877,7 @@ describe('nutritionCsv', () => {
   ]
 
   it('writes the documented columns, date-sorted, blanks for missing values', () => {
-    expect(nutritionCsv(Object.freeze(entries))).toBe(
+    expect(nutritionCsv(deepFreeze(structuredClone(entries)))).toBe(
       [
         'date,kcal,protein_g,carbs_g,fat_g,steps',
         '2026-09-28,2980,,,,',

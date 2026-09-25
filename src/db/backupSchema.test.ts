@@ -860,6 +860,19 @@ describe('parseBackup: rejected files', () => {
     ])
   })
 
+  it('reports duplicate keys in the same pass as invalid rows', () => {
+    const json = withChanges({
+      'tables.setLogs.1.id': 'set-1',
+      'tables.setLogs.2.id': 'set-1',
+      'tables.setLogs.1.reps': 2.5,
+      'tables.setLogs.2.reps': 2.5,
+    })
+    const errors = errorsOf(json)
+    expect(errors).toContain('tables.setLogs[1].reps: expected integer, got 2.5')
+    expect(errors).toContain('tables.setLogs[1].id: duplicate id "set-1" (also at [0])')
+    expect(errors).toContain('tables.setLogs[2].id: duplicate id "set-1" (also at [0])')
+  })
+
   it('formats awkward paths and values readably', () => {
     const json = withChanges({
       appVersion: { v: 1 },

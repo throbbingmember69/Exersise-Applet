@@ -484,38 +484,57 @@ type MutuallyAssignable<A, B> = [A] extends [B] ? ([B] extends [A] ? true : fals
 type AssertAllTrue<T extends Record<string, true>> = T
 
 /**
+ * Makes every nested property required, so mutual assignability also notices an optional field
+ * that exists on one side only (plain assignability ignores a missing optional property).
+ */
+type DeepRequired<T> = T extends readonly (infer U)[]
+  ? DeepRequired<U>[]
+  : T extends string | number | boolean | bigint | symbol | null | undefined
+    ? T
+    : T extends object
+      ? { [K in keyof T]-?: DeepRequired<T[K]> }
+      : T
+
+type SameShape<A, B> = MutuallyAssignable<A, B> extends true
+  ? MutuallyAssignable<DeepRequired<A>, DeepRequired<B>>
+  : false
+
+/**
  * Compile-time guard, never used at runtime: fails typecheck when a row schema and its types.ts
- * entity drift apart in either direction (a field, enum member or nullability added or removed),
- * or when TABLE_NAMES, TableRows and rowSchemas list different tables.
+ * entity drift apart in either direction (a field, optional field, enum member or nullability
+ * added or removed, at any depth), or when TABLE_NAMES, TableRows and rowSchemas list different
+ * tables.
  */
 export type RowSchemasMatchEntities = AssertAllTrue<
-  { [K in TableName]: MutuallyAssignable<z.output<(typeof rowSchemas)[K]>, TableRows[K]> } & {
+  { [K in TableName]: SameShape<z.output<(typeof rowSchemas)[K]>, TableRows[K]> } & {
     tableNames: MutuallyAssignable<TableName, keyof TableRows>
     rowSchemaNames: MutuallyAssignable<TableName, keyof typeof rowSchemas>
   }
 >
 
-/** A table: an array of rows whose primary key is unique (a duplicate would abort the restore). */
-function table<S extends z.ZodMiniType>(row: S, primaryKey: keyof z.output<S> & string) {
-  return z.array(row).check(
-    z.superRefine((rows: z.output<S>[], ctx) => {
-      const firstIndex = new Map<unknown, number>()
-      rows.forEach((r, i) => {
-        const key = r[primaryKey]
-        const first = firstIndex.get(key)
-        if (first === undefined) firstIndex.set(key, i)
-        else {
-          ctx.addIssue({
-            code: 'custom',
-            path: [i, primaryKey],
-            input: key,
-            message: `duplicate ${primaryKey} ${describeValue(key)} (also at [${first}])`,
-          })
-        }
-      })
-    }),
-  )
-}
+/** Primary key of each table (a duplicate would abort the restore). */
+export const PRIMARY_KEYS = {
+  profile: 'id',
+  settings: 'id',
+  appState: 'key',
+  muscles: 'id',
+  gyms: 'id',
+  exercises: 'id',
+  gymExerciseSettings: 'id',
+  programDays: 'id',
+  programSlots: 'id',
+  gymSlotOverrides: 'id',
+  trackStarts: 'trackKey',
+  sessions: 'id',
+  sessionExercises: 'id',
+  setLogs: 'id',
+  bodyEntries: 'date',
+  nutritionEntries: 'date',
+  phases: 'id',
+  targetRevisions: 'id',
+  checkIns: 'id',
+  suggestions: 'id',
+} as const satisfies { [K in TableName]: keyof TableRows[K] & string }
 
 export const backupSchema = z.object({
   format: z.literal(BACKUP_FORMAT),
@@ -523,26 +542,26 @@ export const backupSchema = z.object({
   appVersion: z.string(),
   exportedAt: epochMs,
   tables: z.object({
-    profile: table(profileRow, 'id'),
-    settings: table(settingsRow, 'id'),
-    appState: table(appStateRow, 'key'),
-    muscles: table(muscleRow, 'id'),
-    gyms: table(gymRow, 'id'),
-    exercises: table(exerciseRow, 'id'),
-    gymExerciseSettings: table(gymExerciseSettingRow, 'id'),
-    programDays: table(programDayRow, 'id'),
-    programSlots: table(programSlotRow, 'id'),
-    gymSlotOverrides: table(gymSlotOverrideRow, 'id'),
-    trackStarts: table(trackStartRow, 'trackKey'),
-    sessions: table(sessionRow, 'id'),
-    sessionExercises: table(sessionExerciseRow, 'id'),
-    setLogs: table(setLogRow, 'id'),
-    bodyEntries: table(bodyEntryRow, 'date'),
-    nutritionEntries: table(nutritionEntryRow, 'date'),
-    phases: table(phaseRow, 'id'),
-    targetRevisions: table(targetRevisionRow, 'id'),
-    checkIns: table(checkInRow, 'id'),
-    suggestions: table(suggestionRow, 'id'),
+    profile: z.array(profileRow),
+    settings: z.array(settingsRow),
+    appState: z.array(appStateRow),
+    muscles: z.array(muscleRow),
+    gyms: z.array(gymRow),
+    exercises: z.array(exerciseRow),
+    gymExerciseSettings: z.array(gymExerciseSettingRow),
+    programDays: z.array(programDayRow),
+    programSlots: z.array(programSlotRow),
+    gymSlotOverrides: z.array(gymSlotOverrideRow),
+    trackStarts: z.array(trackStartRow),
+    sessions: z.array(sessionRow),
+    sessionExercises: z.array(sessionExerciseRow),
+    setLogs: z.array(setLogRow),
+    bodyEntries: z.array(bodyEntryRow),
+    nutritionEntries: z.array(nutritionEntryRow),
+    phases: z.array(phaseRow),
+    targetRevisions: z.array(targetRevisionRow),
+    checkIns: z.array(checkInRow),
+    suggestions: z.array(suggestionRow),
   }),
 })
 
@@ -555,8 +574,39 @@ export function parseBackup(json: unknown): ParseBackupResult {
   const headerError = checkHeader(json)
   if (headerError) return { ok: false, errors: [headerError] }
   const result = backupSchema.safeParse(json, { reportInput: true })
-  if (!result.success) return { ok: false, errors: result.error.issues.map(formatIssue) }
+  // Scanned on the raw input, so duplicates are reported in the same pass as invalid rows.
+  const duplicates = duplicateKeyErrors(json)
+  if (!result.success || duplicates.length > 0) {
+    const issues = result.success ? [] : result.error.issues.map(formatIssue)
+    return { ok: false, errors: [...issues, ...duplicates] }
+  }
   return { ok: true, backup: result.data }
+}
+
+function duplicateKeyErrors(json: unknown): string[] {
+  if (typeof json !== 'object' || json === null) return []
+  const tables = (json as Record<string, unknown>).tables
+  if (typeof tables !== 'object' || tables === null) return []
+  const errors: string[] = []
+  for (const name of TABLE_NAMES) {
+    const rows = (tables as Record<string, unknown>)[name]
+    if (!Array.isArray(rows)) continue
+    const primaryKey = PRIMARY_KEYS[name]
+    const firstIndex = new Map<unknown, number>()
+    rows.forEach((row: unknown, i) => {
+      if (typeof row !== 'object' || row === null) return
+      const key = (row as Record<string, unknown>)[primaryKey]
+      if (key === undefined) return
+      const first = firstIndex.get(key)
+      if (first === undefined) firstIndex.set(key, i)
+      else {
+        errors.push(
+          `${formatPath(['tables', name, i, primaryKey])}: duplicate ${primaryKey} ${describeValue(key)} (also at [${first}])`,
+        )
+      }
+    })
+  }
+  return errors
 }
 
 function checkHeader(json: unknown): string | null {
