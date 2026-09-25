@@ -22,6 +22,7 @@
   --space-4: 16px;
   --space-5: 24px;
   --tap: 48px; /* minimum touch target */
+  --nav-height: 60px;
 
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'Cascadia Mono', 'Roboto Mono', monospace;
