@@ -13,7 +13,12 @@ export default function More() {
         <LinkList>
           <LinkRow to="/settings" icon="settings" label="Settings" hint="Rule thresholds" />
           <LinkRow to="/settings/profile" icon="body" label="Profile" hint="Age, height, units" />
-          <LinkRow to="/settings/data" icon="download" label="Data & backup" hint="Backup, restore, CSV" />
+          <LinkRow
+            to="/settings/data"
+            icon="download"
+            label="Data & backup"
+            hint="Backup, restore, CSV"
+          />
         </LinkList>
       </Stack>
     </>

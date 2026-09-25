@@ -69,7 +69,10 @@ export function dateRange(a: LocalDate, b: LocalDate): LocalDate[] {
 }
 
 /** Age in whole years on `date`: from birthDate when known, else ageYears advanced from ageAsOf. */
-export function ageOn(profile: Pick<UserProfile, 'ageYears' | 'ageAsOf' | 'birthDate'>, date: LocalDate): number {
+export function ageOn(
+  profile: Pick<UserProfile, 'ageYears' | 'ageAsOf' | 'birthDate'>,
+  date: LocalDate,
+): number {
   if (profile.birthDate) return wholeYearsBetween(profile.birthDate, date)
   return profile.ageYears + wholeYearsBetween(profile.ageAsOf, date)
 }

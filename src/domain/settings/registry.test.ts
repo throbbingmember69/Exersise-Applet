@@ -9,7 +9,11 @@ import {
 } from './registry'
 
 // Every row of the spec's "Default settings" table, with the tag it's given there.
-const SPEC_DEFAULTS: { row: string; keys: [SettingKey, number][]; tag: 'Evidence' | 'Heuristic' }[] = [
+const SPEC_DEFAULTS: {
+  row: string
+  keys: [SettingKey, number][]
+  tag: 'Evidence' | 'Heuristic'
+}[] = [
   { row: 'Activity factor', keys: [['activityFactor', 1.55]], tag: 'Heuristic' },
   { row: 'Trend smoothing α', keys: [['trendAlpha', 0.1]], tag: 'Heuristic' },
   { row: 'Energy per lb of trend change', keys: [['kcalPerLb', 3500]], tag: 'Heuristic' },

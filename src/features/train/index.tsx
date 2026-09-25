@@ -10,7 +10,12 @@ export default function Train() {
         </ButtonLink>
         <LinkList>
           <LinkRow to="/train/history" icon="history" label="History" hint="Past sessions" />
-          <LinkRow to="/train/progress" icon="chart" label="Progress" hint="e1RM trends and stalls" />
+          <LinkRow
+            to="/train/progress"
+            icon="chart"
+            label="Progress"
+            hint="e1RM trends and stalls"
+          />
           <LinkRow
             to="/train/volume"
             icon="list"

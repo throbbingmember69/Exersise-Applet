@@ -714,7 +714,11 @@ describe('setsCsv', () => {
   it('orders by start time, exercise order and set index even when ids and log times disagree', () => {
     // Every id and loggedAt below is chosen to sort the WRONG way, so only the brief's keys
     // (date, session startedAt, session-exercise order, set index) can produce this order.
-    const early = session({ id: 's-z-early', date: d('2026-10-05'), startedAt: at('2026-10-05', 7) })
+    const early = session({
+      id: 's-z-early',
+      date: d('2026-10-05'),
+      startedAt: at('2026-10-05', 7),
+    })
     const late = session({ id: 's-a-late', date: d('2026-10-05'), startedAt: at('2026-10-05', 18) })
     const first = sessionExercise({
       id: 'sx-z-first',

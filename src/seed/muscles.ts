@@ -38,12 +38,7 @@ const NAMES: Readonly<Record<SeedMuscleId, string>> = {
   traps: 'Traps',
 }
 
-const EXEMPT_LOW: ReadonlySet<SeedMuscleId> = new Set([
-  'front_delts',
-  'calves',
-  'abs',
-  'traps',
-])
+const EXEMPT_LOW: ReadonlySet<SeedMuscleId> = new Set(['front_delts', 'calves', 'abs', 'traps'])
 
 export const SEED_MUSCLES: readonly Muscle[] = SEED_MUSCLE_IDS.map((id, i) => ({
   id,

@@ -355,11 +355,7 @@ export type CheckInStatus = 'pending' | 'accepted' | 'accepted_steps' | 'skipped
 export type TdeeSource = 'formula' | 'measured' | 'insufficient_data'
 export type MissDirection = 'low' | 'high'
 export type CheckInSuggestionType =
-  | 'none_first_week'
-  | 'none_insufficient'
-  | 'none_in_band'
-  | 'none_streak'
-  | 'kcal_change'
+  'none_first_week' | 'none_insufficient' | 'none_in_band' | 'none_streak' | 'kcal_change'
 
 export type SwitchPromptKind = 'end_bulk' | 'end_cut' | 'end_maintenance'
 export type SwitchReason =
@@ -437,21 +433,10 @@ export interface Suggestion {
  * - drop: below the range for `missesBeforeDrop` sessions in a row → drop load
  */
 export type Branch =
-  | 'start'
-  | 'calibration'
-  | 'calibrated'
-  | 'step'
-  | 'same_plus_rep'
-  | 'same_after_miss'
-  | 'drop'
+  'start' | 'calibration' | 'calibrated' | 'step' | 'same_plus_rep' | 'same_after_miss' | 'drop'
 
 export type NoticeCode =
-  | 'mixed_loads'
-  | 'calibration_needed'
-  | 'recalibrate'
-  | 'deload'
-  | 'missing_sets'
-  | 'no_bodyweight'
+  'mixed_loads' | 'calibration_needed' | 'recalibrate' | 'deload' | 'missing_sets' | 'no_bodyweight'
 
 export interface Notice {
   code: NoticeCode

@@ -21,7 +21,11 @@ export function trackKey(programDayId: string, exerciseId: string, scope: GymSco
   return [programDayId, exerciseId, scope].join(SEP)
 }
 
-export function parseTrackKey(key: string): { programDayId: string; exerciseId: string; scope: GymScope } {
+export function parseTrackKey(key: string): {
+  programDayId: string
+  exerciseId: string
+  scope: GymScope
+} {
   const parts = key.split(SEP)
   if (parts.length !== 3 || parts.some((p) => p.length === 0)) {
     throw new RangeError(`Malformed track key: ${JSON.stringify(key)}`)
@@ -38,6 +42,8 @@ export function seriesKey(exerciseId: string, scope: GymScope): string {
 
 function assertIdPart(s: string): void {
   if (s.length === 0 || s.includes(SEP)) {
-    throw new RangeError(`Id parts must be non-empty and must not contain "${SEP}": ${JSON.stringify(s)}`)
+    throw new RangeError(
+      `Id parts must be non-empty and must not contain "${SEP}": ${JSON.stringify(s)}`,
+    )
   }
 }
