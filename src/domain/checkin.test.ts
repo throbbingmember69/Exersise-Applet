@@ -277,6 +277,27 @@ describe('evaluateCheckin', () => {
     })
   })
 
+  it('ignores later weeks when re-evaluating a week from a full phase history', () => {
+    const history = [
+      { weekIndex: 2, direction: 'low' as const },
+      { weekIndex: 4, direction: null },
+      { weekIndex: 5, direction: 'high' as const },
+    ]
+    expect(evaluateCheckin(input('bulk', 3, 0.1, history), s)).toEqual({
+      suggestionType: 'kcal_change',
+      suggestedKcalChange: 150,
+      stepsAlternative: null,
+      missDirection: 'low',
+      missStreak: 2,
+    })
+    // Week 2 alone: the later in-band and high weeks don't break or replace its streak of one.
+    expect(evaluateCheckin(input('bulk', 2, 0.1, history), s)).toMatchObject({
+      suggestionType: 'none_streak',
+      missDirection: 'low',
+      missStreak: 1,
+    })
+  })
+
   it('follows the check-in settings', () => {
     const custom: Settings = {
       ...s,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, parseLocalDate } from '@/domain/dates'
 import { DEFAULT_SETTINGS } from '@/domain/settings/registry'
-import type { TrendPoint } from '@/domain/trend'
+import { emaTrend, type TrendPoint } from '@/domain/trend'
 import type { LocalDate, NutritionEntry, Settings } from '@/domain/types'
 import {
   formulaTdee,
@@ -94,6 +94,7 @@ describe('measuredTdee', () => {
     expect(m?.weighInPct).toBe(100)
     expect(m?.meanIntakeKcal).toBe(2500)
     expect(m?.trendChangeLb).toBeCloseTo(1.05, 9)
+    expect(m?.trendDays).toBe(21)
     expect(m?.kcal).toBeCloseTo(2325, 6)
   })
 
@@ -138,26 +139,92 @@ describe('measuredTdee', () => {
     expect(measuredTdee(full({ disruptions: [day(31)] }), s)?.windowDays).toBe(21)
   })
 
-  it('needs the trend on the day before the window starts', () => {
-    // Weigh-ins (and the trend) begin on day 12, so T(start − 1) first exists for an 18-day window.
+  it('starts ΔT at T0 when the trend begins inside the window', () => {
+    // Weigh-ins (and the trend) begin on day 12: 19/21 days weighed in, so the 21-day window
+    // (days 10–30) qualifies. ΔT = T(30) − T(12) = 0.9 lb over the 18 days it spans.
     const m = measuredTdee(
       full({ weighInDates: range(12, 30).map(day), trend: linearTrend(12, 30) }),
       s,
     )
-    expect(m?.windowDays).toBe(18)
-    expect(m?.startDate).toBe(day(13))
+    expect(m?.windowDays).toBe(21)
+    expect(m?.startDate).toBe(day(10))
     expect(m?.trendChangeLb).toBeCloseTo(0.9, 9)
+    expect(m?.trendDays).toBe(18)
+    expect(m?.kcal).toBeCloseTo(2325, 6)
   })
 
-  it('uses the last trend value when the as-of day has no weigh-in yet', () => {
-    // T(29) − T(9) = 1.0 lb → 2500 − 3500 / 21.
+  it('qualifies a fully logged window that starts on the first weigh-in', () => {
+    // Logging starts on day 0: 14 logged days by day 13, and ΔT = T(13) − T(0) spans 13 days.
+    const firstDays = (disruptions: LocalDate[]): MeasuredTdeeInput =>
+      full({
+        asOf: day(13),
+        intake: intake(range(0, 13)),
+        weighInDates: range(0, 13).map(day),
+        trend: linearTrend(0, 13),
+        disruptions,
+      })
+    // A phase start on day −7 pins the window to days 0–13: the 14-day minimum, fully logged.
+    const pinned = measuredTdee(firstDays([day(-7)]), s)
+    expect(pinned?.windowDays).toBe(14)
+    expect(pinned?.startDate).toBe(day(0))
+    expect(pinned?.intakePct).toBe(100)
+    expect(pinned?.trendChangeLb).toBeCloseTo(0.65, 9)
+    expect(pinned?.trendDays).toBe(13)
+    expect(pinned?.kcal).toBeCloseTo(2325, 6)
+    // With nothing to exclude, the longest window with 80% logged is 17 days (14/17 = 82%).
+    const open = measuredTdee(firstDays([]), s)
+    expect(open?.windowDays).toBe(17)
+    expect(open?.startDate).toBe(day(-3))
+    expect(open?.trendDays).toBe(13)
+    expect(open?.kcal).toBeCloseTo(2325, 6)
+  })
+
+  it('ends ΔT at the last reading when the latest days have no weigh-in yet', () => {
+    // No weigh-in on day 30: T(29) − T(9) = 1.0 lb over 20 days → 2325, not 2500 − 3500 / 21.
     const m = measuredTdee(
       full({ weighInDates: range(0, 29).map(day), trend: linearTrend(0, 29) }),
       s,
     )
     expect(m?.windowDays).toBe(21)
     expect(m?.weighInPct).toBeCloseTo((20 / 21) * 100, 9)
-    expect(m?.kcal).toBeCloseTo(2500 - 3500 / 21, 6)
+    expect(m?.trendChangeLb).toBeCloseTo(1, 9)
+    expect(m?.trendDays).toBe(20)
+    expect(m?.kcal).toBeCloseTo(2325, 6)
+
+    // Four days without a weigh-in (17/21 = 81% still qualifies): T(26) − T(9) over 17 days.
+    const late = measuredTdee(
+      full({ weighInDates: range(0, 26).map(day), trend: linearTrend(0, 26) }),
+      s,
+    )
+    expect(late?.windowDays).toBe(21)
+    expect(late?.trendDays).toBe(17)
+    expect(late?.kcal).toBeCloseTo(2325, 6)
+  })
+
+  it('does not bias an EMA trend toward intake when the last weigh-ins are missing', () => {
+    // 3,000 kcal/day while weight rises 0.1 lb/day (true TDEE 2,650), EMA α 0.1.
+    const emaTo = (last: number): TrendPoint[] =>
+      emaTrend(
+        range(0, last).map((n) => ({ date: day(n), weightLb: 180 + 0.1 * n, interpolated: false })),
+        s.trendAlpha,
+      )
+    const probe = (lastWeighIn: number) =>
+      measuredTdee(
+        {
+          asOf: day(39),
+          intake: intake(range(0, 39), 3000),
+          weighInDates: range(0, lastWeighIn).map(day),
+          trend: emaTo(lastWeighIn),
+          disruptions: [],
+        },
+        s,
+      )
+    const everyDay = probe(39)
+    const stale = probe(35) // 17/21 days weighed in
+    expect(everyDay?.kcal).toBeCloseTo(2670.05, 1)
+    expect(stale?.windowDays).toBe(21)
+    expect(stale?.trendDays).toBe(17)
+    expect(stale?.kcal).toBeCloseTo(2673.17, 1) // ΔT / 21 would give 2,735
   })
 
   it('returns null without enough data', () => {
@@ -165,6 +232,10 @@ describe('measuredTdee', () => {
     expect(measuredTdee(full({ trend: [] }), s)).toBeNull()
     const lenient: Settings = { ...s, tdeeMinLoggedPct: 0 }
     expect(measuredTdee(full({ intake: [] }), lenient)).toBeNull()
+    // Under one day of trend inside the window: ending before it, or only on the as-of day.
+    expect(measuredTdee(full({ trend: linearTrend(0, 5) }), lenient)).toBeNull()
+    expect(measuredTdee(full({ trend: linearTrend(30, 30) }), lenient)).toBeNull()
+    expect(measuredTdee(full({ trend: linearTrend(31, 40) }), lenient)).toBeNull()
   })
 
   it('follows the window settings, even when min and max are swapped', () => {

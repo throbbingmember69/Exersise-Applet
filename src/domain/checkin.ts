@@ -48,7 +48,10 @@ export interface CheckinInput {
   weekIndex: number
   /** `weeklyRatePct(trend, dueDate)`; null when the trend doesn't cover the week. */
   ratePct: number | null
-  /** Earlier weeks of this phase (an entry for `weekIndex` is replaced by this evaluation). */
+  /**
+   * Earlier weeks of this phase. Entries at or after `weekIndex` are ignored (an entry for
+   * `weekIndex` is replaced by this evaluation), so a full phase history can be passed.
+   */
   priorWeeks: readonly WeekMiss[]
   /** Weeks up to this index are ignored: the last accepted or manual target change. 0 if none. */
   lastResetWeekIndex: number
@@ -140,7 +143,7 @@ export function evaluateCheckin(input: CheckinInput, s: Settings): CheckinEvalua
   if (direction === null) return none('none_in_band')
 
   const weeks = [
-    ...input.priorWeeks.filter((w) => w.weekIndex !== weekIndex),
+    ...input.priorWeeks.filter((w) => w.weekIndex < weekIndex),
     { weekIndex, direction },
   ]
   const streak = missStreak(weeks, input.lastResetWeekIndex, s).count

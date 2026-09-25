@@ -3,11 +3,15 @@
 // body fat is unknown. Measured (finding #30): the longest window of tdeeWindowMaxDays down to
 // tdeeWindowMinDays calendar days ending on the as-of date where at least tdeeMinLoggedPct% of
 // days have kcal and a weigh-in, starting at least tdeeExcludeDaysAfterStart days after every
-// disruption (phase start). TDEE = mean kcal over logged days − kcalPerLb × ΔT / L, where ΔT runs
-// from the trend at the close of the day before the window to the trend on its last day, so it
-// spans exactly the window's L days. Timeline (finding #29): the first measured estimate replaces
-// the formula uncapped; later ones move at most ±tdeeMaxWeeklyChangeKcal from the previous
-// estimate; without a measurement the previous estimate is kept as 'insufficient_data'.
+// disruption (phase start). TDEE = mean kcal over logged days − kcalPerLb × ΔT / D. ΔT runs from
+// the trend at the close of the day before the window to the trend on its last day, so normally
+// it spans exactly the window's D = L days. Only actual trend points are used: if the trend
+// starts inside the window (T0 = the first weigh-in) ΔT starts at T0, and if the last days have
+// no weigh-in yet ΔT ends at the last reading. D is then the days ΔT really spans, so a weight
+// change is never spread over days it doesn't cover.
+// Timeline (finding #29): the first measured estimate replaces the formula uncapped; later ones
+// move at most ±tdeeMaxWeeklyChangeKcal from the previous estimate; without a measurement the
+// previous estimate is kept as 'insufficient_data'.
 import { katchMcArdle, leanMassLb, mifflinStJeor } from '@/domain/bodycomp'
 import { addDays, compareLocalDate, dateRange, daysBetween } from '@/domain/dates'
 import { clamp, mean } from '@/domain/rounding'
@@ -56,6 +60,8 @@ export interface MeasuredTdee {
   weighInPct: number
   meanIntakeKcal: number
   trendChangeLb: number
+  /** Days `trendChangeLb` spans: `windowDays`, or fewer at the start or end of the trend. */
+  trendDays: number
 }
 
 export interface LoggingCoverage {
@@ -148,6 +154,28 @@ export function loggingCoverage(input: {
   )
 }
 
+/**
+ * Trend change from the close of `from` to the close of `to`, clipped to the actual trend points
+ * (T0 … the last reading), with the days it spans. Null when under one day of trend is covered.
+ */
+function trendChange(
+  trend: readonly TrendPoint[],
+  from: LocalDate,
+  to: LocalDate,
+): { lb: number; days: number } | null {
+  const first = trend[0]
+  const last = trend[trend.length - 1]
+  if (!first || !last) return null
+  const a = compareLocalDate(from, first.date) < 0 ? first.date : from
+  const b = compareLocalDate(to, last.date) > 0 ? last.date : to
+  const days = daysBetween(a, b)
+  if (days < 1) return null
+  const tA = trendOn(trend, a)
+  const tB = trendOn(trend, b)
+  if (!tA || tA.stale || !tB || tB.stale) return null
+  return { lb: tB.trendLb - tA.trendLb, days }
+}
+
 /** Measured maintenance over the longest qualifying window ending on `asOf`, or null. */
 export function measuredTdee(input: MeasuredTdeeInput, s: Settings): MeasuredTdee | null {
   const { asOf, trend } = input
@@ -164,19 +192,18 @@ export function measuredTdee(input: MeasuredTdeeInput, s: Settings): MeasuredTde
     const cov = coverage(days, kcal, weighIns)
     const needed = s.tdeeMinLoggedPct * len
     if (cov.intakeDays * 100 < needed || cov.weighInDays * 100 < needed) continue
-    const tStart = trendOn(trend, addDays(start, -1))
-    const tEnd = trendOn(trend, asOf)
+    const change = trendChange(trend, addDays(start, -1), asOf)
     const meanKcal = mean(days.flatMap((d) => kcal.get(d)?.kcal ?? []))
-    if (!tStart || tStart.stale || !tEnd || meanKcal === null) continue
-    const trendChangeLb = tEnd.trendLb - tStart.trendLb
+    if (!change || meanKcal === null) continue
     return {
-      kcal: meanKcal - (s.kcalPerLb * trendChangeLb) / len,
+      kcal: meanKcal - (s.kcalPerLb * change.lb) / change.days,
       windowDays: len,
       startDate: start,
       intakePct: cov.intakePct,
       weighInPct: cov.weighInPct,
       meanIntakeKcal: meanKcal,
-      trendChangeLb,
+      trendChangeLb: change.lb,
+      trendDays: change.days,
     }
   }
   return null
