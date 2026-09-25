@@ -6,6 +6,7 @@ Offline-first, installable PWA (Android phone) for logging workouts, bodyweight 
 - `docs/DECISIONS.md`: binding user decisions, adopted defaults, and the 55 spec-audit findings. It wins over everything else.
 - `docs/DESIGN.md`: the detailed design (schema, algorithm contracts, screens, milestones).
 - `docs/PLAN.md`: the approved plan.
+- `docs/UI.md`: UI conventions for every screen (layout, components, states, number formats, accessibility).
 - The spec `.md` at the repo root: rules, seed data and acceptance criteria.
 
 Ask the user before making architectural decisions not covered by these docs.
