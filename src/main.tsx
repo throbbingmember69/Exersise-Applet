@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import ServicesProvider from './app/ServicesProvider'
 import ToastProvider from './app/ToastProvider'
+import UpdatePrompt from './app/UpdatePrompt'
 import { getAppCtx } from './services/context'
 import './styles/global.css'
 
@@ -14,6 +15,7 @@ createRoot(root).render(
     <ServicesProvider ctx={getAppCtx()}>
       <ToastProvider>
         <App />
+        <UpdatePrompt />
       </ToastProvider>
     </ServicesProvider>
   </StrictMode>,
