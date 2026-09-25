@@ -91,9 +91,9 @@ describe('settings', () => {
 
   it('snaps values to the registry step so integer settings stay integers', async () => {
     const c = ctx()
-    await updateSettings(c, { cutStepsAlternative: 2100.5, activityFactor: 1.6123, dropPct: 7.3 })
+    await updateSettings(c, { cutStepsAlternative: 2400.3, activityFactor: 1.6123, dropPct: 7.3 })
     expect(await loadSettingOverrides(c)).toEqual({
-      cutStepsAlternative: 2000,
+      cutStepsAlternative: 2500,
       activityFactor: 1.6,
       dropPct: 7.5,
     })
