@@ -73,7 +73,7 @@ export default defineConfig([
     },
   },
   {
-    // UI writes go through services/, never straight to repositories.
+    // UI reads and writes through services/, never the database directly.
     files: ['src/features/**/*.{ts,tsx}', 'src/ui/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
@@ -81,8 +81,8 @@ export default defineConfig([
         {
           patterns: [
             {
-              group: ['@/db/repos', '@/db/repos/*'],
-              message: 'UI code writes through services/, not repositories.',
+              group: ['@/db', '@/db/*', 'dexie'],
+              message: 'UI code goes through services/ (reads and writes), not the database.',
             },
           ],
         },

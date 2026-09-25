@@ -20,7 +20,7 @@ Node isn't on PATH in some shells on this machine. Prefix bash commands with `ex
 
 ## Architecture rules
 - **`src/domain/` and `src/seed/` are pure.** No React, Dexie, DOM, or app-layer imports. No `Date.now()`, argument-less `new Date()` or `Math.random()`; "now"/"today" is always a parameter. ESLint enforces this.
-- **Writes go through `src/services/`.** `features/` and `ui/` never import `db/repos` to write.
+- **The UI goes through `src/services/`** for reads (functions used with `useLiveQuery`) and writes. `features/` and `ui/` never import `@/db` or `dexie` (ESLint enforces this). Services take a `ServiceCtx` (`db`, `now`, `newId`) from `services/context.ts`, so tests use `createTestCtx()`.
 - **Mass is stored in lb at full precision.** Only formatters in `domain/units.ts` round. kg is display-only.
 - **Dates are local `YYYY-MM-DD` strings** (`LocalDate`), with day math via `domain/dates.ts`. Never `new Date('YYYY-MM-DD')` (it parses as UTC).
 - **Every tunable number lives in `domain/settings/registry.ts`,** tagged Evidence/Heuristic and editable. No magic numbers in engine code.

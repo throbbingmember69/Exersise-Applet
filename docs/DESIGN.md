@@ -1,6 +1,13 @@
 <!-- Generated during planning on 2026-09-24. -->
 
 > **Status:** design reference for implementing agents. `docs/DECISIONS.md` takes precedence where they differ. The M0 installs resolved to newer majors than this document assumes: react-router 8, Vite 8, Vitest 5, TypeScript 6, ESLint 10 (see `package.json`). Node 24 is installed and the git remote and identity are configured.
+>
+> **Lead changes since planning:**
+> - There's no `db/repos` layer. Services use the Dexie `AppDB` (`src/db/schema.ts`) directly through a `ServiceCtx` (`db`, `now`, `newId`; see `src/services/context.ts`).
+> - The UI never imports `@/db` or `dexie`. It reads through service query functions (with `useLiveQuery`) and writes through service commands.
+> - There's no `loadIncrementLb`. The per-gym step override is `GymExerciseSetting.stepLb`.
+> - `TrackStartRow` has no `recalibrationBadge`. The badge shows when `calibrate` is set and a start load exists.
+> - Calibration during replay comes from the track start and state, not from `TrackSession.isCalibration`. That flag only serves strength-series exclusion.
 
 # Implementation plan: Exersise Applet (offline-first Android PWA)
 
