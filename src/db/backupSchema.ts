@@ -495,9 +495,10 @@ type DeepRequired<T> = T extends readonly (infer U)[]
       ? { [K in keyof T]-?: DeepRequired<T[K]> }
       : T
 
-type SameShape<A, B> = MutuallyAssignable<A, B> extends true
-  ? MutuallyAssignable<DeepRequired<A>, DeepRequired<B>>
-  : false
+type SameShape<A, B> =
+  MutuallyAssignable<A, B> extends true
+    ? MutuallyAssignable<DeepRequired<A>, DeepRequired<B>>
+    : false
 
 /**
  * Compile-time guard, never used at runtime: fails typecheck when a row schema and its types.ts

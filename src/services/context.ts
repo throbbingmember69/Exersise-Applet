@@ -28,12 +28,15 @@ export function getAppCtx(): ServiceCtx {
   return appCtx
 }
 
-/** A context for tests: isolated database name, controllable clock, sequential ids. */
-export function createTestCtx(opts: { dbName?: string; startMs?: number } = {}) {
+/**
+ * A context for tests: isolated database (seeded like a first launch unless `seed: false`),
+ * controllable clock, sequential ids.
+ */
+export function createTestCtx(opts: { dbName?: string; startMs?: number; seed?: boolean } = {}) {
   let t = opts.startMs ?? Date.UTC(2026, 8, 24, 12)
   let n = 0
   const ctx: ServiceCtx & { setNow: (ms: number) => void; advance: (ms: number) => void } = {
-    db: new AppDB(opts.dbName ?? `test-${crypto.randomUUID()}`),
+    db: new AppDB(opts.dbName ?? `test-${crypto.randomUUID()}`, { seed: opts.seed }),
     now: () => t,
     newId: () => `id-${String(++n).padStart(4, '0')}`,
     setNow: (ms) => {

@@ -27,6 +27,7 @@ import type {
   TrackStartRow,
   UserProfile,
 } from '@/domain/types'
+import { populateSeed } from './populate'
 
 /** Unique per origin: throbbingmember69.github.io is shared by all of the user's Pages sites. */
 export const DB_NAME = 'exersise-applet'
@@ -82,7 +83,8 @@ export class AppDB extends Dexie {
   checkIns!: EntityTable<CheckIn, 'id'>
   suggestions!: EntityTable<Suggestion, 'id'>
 
-  constructor(name: string = DB_NAME) {
+  /** `seed: false` creates an empty database (tests, backup restore into a fresh DB). */
+  constructor(name: string = DB_NAME, opts: { seed?: boolean } = {}) {
     super(name)
     this.version(1).stores({
       profile: 'id',
@@ -106,5 +108,6 @@ export class AppDB extends Dexie {
       checkIns: 'id, phaseId, dueDate, &[phaseId+dueDate]',
       suggestions: 'id, kind, &key, status',
     })
+    if (opts.seed !== false) this.on('populate', populateSeed)
   }
 }
