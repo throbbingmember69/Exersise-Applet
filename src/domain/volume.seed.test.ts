@@ -103,8 +103,8 @@ describe('seed program volume (spec acceptance)', () => {
     for (const m of ['triceps', 'chest', 'quads', 'biceps', 'back', 'glutes']) {
       expect(flags.get(m)).toBe('ok')
     }
-    // Traps (finisher-only, not in the spec table) has no planned volume and isn't exempt.
-    expect(flags.get('traps')).toBe('low')
+    // Traps (finisher-only, not in the spec table) has no planned volume and is exempt.
+    expect(flags.get('traps')).toBeNull()
   })
 
   it('keeps the same planned volume when every "or" slot uses its alternate', () => {

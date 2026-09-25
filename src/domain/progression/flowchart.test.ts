@@ -339,6 +339,22 @@ describe('progression flowchart', () => {
     })
   })
 
+  it('a start with no known load calibrates even without the calibrate flag', () => {
+    // Without this, trial loads (60 × 3 below an 8–12 range) would be scored as a miss.
+    const noLoad: Track = { ...FLAT_PRESS, start: { startLoadLb: null, calibrate: false } }
+    const trials: SessionSpec = {
+      sets: [
+        [40, 12],
+        [60, 3],
+        [55, 10],
+        [55, 9],
+      ],
+    }
+    const { next, results } = run(noLoad, [trials])
+    expect(results[0]).toMatchObject({ branch: 'calibration', evaluated: false, baseLb: 55 })
+    expect(next).toMatchObject({ loadLb: 55, branch: 'calibrated', missStreakBefore: 0 })
+  })
+
   it('mixed loads → the lowest load is the base, with a notice', () => {
     const { next, results } = run(SMITH_SQUAT, [
       {

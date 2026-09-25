@@ -94,7 +94,15 @@ describe('nextPrescription', () => {
       missStreakBefore: 0,
       notices: [],
     })
-    expect(next(initialTrackState(), { startLoadLb: null, calibrate: false }).loadLb).toBeNull()
+  })
+
+  it('treats a start with no known load as calibration even without the calibrate flag', () => {
+    expect(next(initialTrackState(), { startLoadLb: null, calibrate: false })).toMatchObject({
+      loadLb: null,
+      branch: 'start',
+      isCalibration: true,
+      notices: [{ code: 'calibration_needed' }],
+    })
   })
 
   it('flags a calibration session: blank when no start load, "recalibrate" with one', () => {
@@ -215,9 +223,9 @@ describe('deloadPrescription', () => {
       loadLb: 180,
       repTargets: [9, 9, 8],
     })
-    // A 0% cut still takes the one-step minimum of the drop routine.
+    // A 0% cut is a sets-only deload: the load is kept (no one-step minimum).
     const zeroCut = resolveSettings({ deloadLoadCutPct: 0 })
-    expect(deload(base, SQUAT, 10, 'machine', zeroCut).loadLb).toBe(210)
+    expect(deload(base, SQUAT, 10, 'machine', zeroCut)).toMatchObject({ loadLb: 220, sets: 2 })
   })
 
   it('is not thrown off by binary error in the set fraction', () => {

@@ -5,8 +5,8 @@
 // Per session, in order:
 //   1. Deload session: not evaluated; the miss streak resets.
 //   2. No working sets (exercise skipped): not evaluated; the state carries forward unchanged.
-//   3. The track's first session when its start says calibrate: not evaluated for top/below; the
-//      last working set's load becomes the base.
+//   3. The track's first session when its start says calibrate or has no load: not evaluated for
+//      top/below; the last working set's load becomes the base.
 //   4. Otherwise evaluate exactly the first N working sets by setIndex (N = prescribed sets).
 //      Base = the lowest of their loads. Every set ≥ repMax → step. None < repMin → same load,
 //      +1 rep. Some set < repMin → a miss; `missesBeforeDrop` misses in a row at the same base
@@ -25,6 +25,14 @@ import type {
   WorkingSet,
 } from '@/domain/types'
 import { loadsEqual } from '@/domain/units'
+
+/**
+ * A track starts with calibration when its start says so, or when it has no known load (with
+ * nothing to suggest, the first session has to find the load).
+ */
+export function startsWithCalibration(start: TrackStart): boolean {
+  return start.calibrate || start.startLoadLb === null
+}
 
 /** State of a track with no history. */
 export function initialTrackState(): TrackState {
@@ -92,7 +100,7 @@ export function evaluateSession(
 
   const n = Math.max(1, session.prescribed.sets)
 
-  if (start.calibrate && !prev.calibrated && prev.evaluatedCount === 0) {
+  if (startsWithCalibration(start) && !prev.calibrated && prev.evaluatedCount === 0) {
     const state: TrackState = {
       ...prev,
       lastBaseLb: last.loadLb,

@@ -1,7 +1,7 @@
 // Seed muscle list: the 12 muscles of the spec's "Weekly totals" table plus traps, which only the
 // shrug finisher trains (audit finding #50). Bands inherit the global weekly-volume settings.
 // Front delts, calves and abs never flag "low" (user decision: the spec calls them "enough" and
-// "low by choice").
+// "low by choice"). Traps is exempt too: no program slot trains it, only the optional finisher.
 import type { Muscle } from '@/domain/types'
 
 export const SEED_MUSCLE_IDS = [
@@ -38,7 +38,12 @@ const NAMES: Readonly<Record<SeedMuscleId, string>> = {
   traps: 'Traps',
 }
 
-const EXEMPT_LOW: ReadonlySet<SeedMuscleId> = new Set(['front_delts', 'calves', 'abs'])
+const EXEMPT_LOW: ReadonlySet<SeedMuscleId> = new Set([
+  'front_delts',
+  'calves',
+  'abs',
+  'traps',
+])
 
 export const SEED_MUSCLES: readonly Muscle[] = SEED_MUSCLE_IDS.map((id, i) => ({
   id,

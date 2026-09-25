@@ -6,8 +6,9 @@
 // same-load branches; the whole-step drop after a drop (the added load for bodyweight_plus).
 // Reps: last reps + 1 per set (capped at repMax) after an in-range session; last reps pulled back
 // into the range after a single miss; repMin otherwise and for any set with no previous reps.
-// A deload keeps the same suggestion with ceil(sets × fraction) sets and a lighter load; deload
-// sessions are skipped by the replay, so the pre-deload suggestion returns afterwards.
+// A deload keeps the same suggestion with ceil(sets × fraction) sets and a lighter load (a 0% cut
+// keeps the load: a sets-only deload); deload sessions are skipped by the replay, so the
+// pre-deload suggestion returns afterwards.
 import type { Settings } from '@/domain/settings/registry'
 import type {
   Branch,
@@ -20,6 +21,7 @@ import type {
 } from '@/domain/types'
 import { clamp } from '@/domain/rounding'
 import { dropLoad } from './drop'
+import { startsWithCalibration } from './evaluate'
 
 /** Guards ceil() against binary error in sets × fraction (10 × (0.1 + 0.2) = 3.000…04). */
 const SET_EPSILON = 1e-9
@@ -51,7 +53,7 @@ export function nextPrescription(
   const base = state.lastBaseLb
   switch (state.lastBranch) {
     case 'start':
-      if (start.calibrate) {
+      if (startsWithCalibration(start)) {
         const code = start.startLoadLb === null ? 'calibration_needed' : 'recalibrate'
         return make('start', start.startLoadLb, { isCalibration: true, notices: [{ code }] })
       }
@@ -103,9 +105,10 @@ export function deloadPrescription(
   settings: Settings,
 ): NextPrescription {
   const sets = Math.max(1, Math.ceil(regime.sets * settings.deloadSetFraction - SET_EPSILON))
+  // A 0% load cut is a sets-only deload; any other cut uses the whole-step drop routine.
   const loadLb =
-    p.loadLb === null
-      ? null
+    p.loadLb === null || settings.deloadLoadCutPct === 0
+      ? p.loadLb
       : dropLoad(p.loadLb, stepLb, settings.deloadLoadCutPct, loadType === 'bodyweight_plus')
   return {
     ...p,

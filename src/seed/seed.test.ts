@@ -369,6 +369,7 @@ describe('seed muscles', () => {
       'calves',
       'abs',
       'front_delts',
+      'traps',
     ])
   })
 })

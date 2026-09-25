@@ -8,6 +8,14 @@
 > - There's no `loadIncrementLb`. The per-gym step override is `GymExerciseSetting.stepLb`.
 > - `TrackStartRow` has no `recalibrationBadge`. The badge shows when `calibrate` is set and a start load exists.
 > - Calibration during replay comes from the track start and state, not from `TrackSession.isCalibration`. That flag only serves strength-series exclusion.
+> - A track start with no known load (`startLoadLb: null`) always begins with a calibration session, even without `calibrate` (`startsWithCalibration`). Otherwise trial loads would be scored as misses.
+> - Deload with `deloadLoadCutPct = 0` is a sets-only deload: the load is kept. Any other cut uses the whole-step `dropLoad`, which drops at least one step.
+> - Traps (trained only by the optional shrug finisher) is seeded as exempt from the "low" volume flag, like front delts, calves and abs.
+> - **Measured maintenance:**
+>   - TDEE = mean kcal over logged days − kcalPerLb × ΔT / D.
+>   - ΔT runs from the trend at the close of the day before the window to the trend on its last day, so normally D = L (the window length).
+>   - Only real trend points are used. If the trend starts inside the window, or the last days have no weigh-in, ΔT covers fewer days and D is the days it actually spans.
+>   - Window choice, logging thresholds, the disruption exclusion and the week-over-week cap follow finding #30 and finding #29 (see `src/domain/tdee.ts`).
 
 # Implementation plan: Exersise Applet (offline-first Android PWA)
 
