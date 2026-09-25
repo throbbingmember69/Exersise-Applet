@@ -1,0 +1,58 @@
+/* Design tokens. Dark by default (gym lighting, OLED); light follows the OS setting. */
+:root {
+  color-scheme: dark light;
+
+  --bg: #0f1216;
+  --surface: #171b21;
+  --surface-2: #1f252d;
+  --border: #2b323c;
+  --text: #e8edf3;
+  --text-muted: #9aa6b2;
+  --accent: #7cc4ff;
+  --accent-contrast: #062033;
+  --good: #5fd08a;
+  --warn: #f2c14e;
+  --bad: #ff7a7a;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --tap: 48px; /* minimum touch target */
+
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', 'Roboto Mono', monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --bg: #f5f7fa;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --border: #d5dbe3;
+    --text: #111820;
+    --text-muted: #56616d;
+    --accent: #0b6bcb;
+    --accent-contrast: #ffffff;
+    --good: #1c8a4a;
+    --warn: #9a6a00;
+    --bad: #c62828;
+  }
+}
+
+:root[data-theme='light'] {
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --border: #d5dbe3;
+  --text: #111820;
+  --text-muted: #56616d;
+  --accent: #0b6bcb;
+  --accent-contrast: #ffffff;
+  --good: #1c8a4a;
+  --warn: #9a6a00;
+  --bad: #c62828;
+}

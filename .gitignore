@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+dev-dist/
+*.tsbuildinfo
+
+# test output
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# env
+.env
+.env.*
+
+# local Claude Code state (worktrees, local settings)
+.claude/worktrees/
+.claude/settings.local.json
