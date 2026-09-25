@@ -1,0 +1,23 @@
+.figure {
+  margin: 0;
+}
+
+.chart {
+  width: 100%;
+  min-height: 120px;
+  color: var(--text-muted);
+}
+
+.chart :global(.u-legend) {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
