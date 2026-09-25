@@ -7,8 +7,10 @@ import {
   type Settings,
   type SettingKey,
 } from '@/domain/settings/registry'
+import { roundHalfAway, roundToStep } from '@/domain/rounding'
 import type { UserProfile } from '@/domain/types'
 import type { ServiceCtx } from './context'
+import { ServiceError } from './errors'
 
 const SETTINGS_ID = 'singleton'
 const PROFILE_ID = 'me'
@@ -33,23 +35,29 @@ export async function updateSettings(
   ctx: ServiceCtx,
   patch: Partial<Record<SettingKey, number>>,
 ): Promise<void> {
+  // Values snap to the registry step (e.g. whole steps/day), so stored settings always match what
+  // the settings screen can show and backups stay valid (integer-valued settings stay integers).
+  const snapped: [SettingKey, number][] = []
   for (const [key, value] of Object.entries(patch)) {
-    if (!isSettingKey(key)) throw new RangeError(`Unknown setting: ${key}`)
+    if (!isSettingKey(key)) throw new ServiceError('unknown_setting', `Unknown setting: ${key}`)
     const meta = settingMeta(key)
-    if (
-      typeof value !== 'number' ||
-      !Number.isFinite(value) ||
-      value < meta.min ||
-      value > meta.max
-    ) {
-      throw new RangeError(`${meta.label} must be between ${meta.min} and ${meta.max}`)
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw new ServiceError('invalid_setting', `${meta.label} must be a number`)
     }
+    const v = roundHalfAway(roundToStep(value, meta.step), 6)
+    if (v < meta.min || v > meta.max) {
+      throw new ServiceError(
+        'invalid_setting',
+        `${meta.label} must be between ${meta.min} and ${meta.max}`,
+      )
+    }
+    snapped.push([key, v])
   }
   await ctx.db.transaction('rw', ctx.db.settings, async () => {
     const values: Partial<Record<SettingKey, number>> = {
       ...((await ctx.db.settings.get(SETTINGS_ID))?.values ?? {}),
     }
-    for (const [key, value] of Object.entries(patch) as [SettingKey, number][]) {
+    for (const [key, value] of snapped) {
       if (value === settingMeta(key).default) delete values[key]
       else values[key] = value
     }

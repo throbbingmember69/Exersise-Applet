@@ -79,11 +79,24 @@ describe('settings', () => {
 
   it('rejects unknown keys and out-of-bounds values without writing', async () => {
     const c = ctx()
-    await expect(updateSettings(c, { dropPct: 50 })).rejects.toThrow(RangeError)
+    await expect(updateSettings(c, { dropPct: 50 })).rejects.toThrow(/between 5 and 20/)
     await expect(
       updateSettings(c, { nope: 1 } as unknown as Parameters<typeof updateSettings>[1]),
-    ).rejects.toThrow(RangeError)
+    ).rejects.toMatchObject({ code: 'unknown_setting' })
+    await expect(updateSettings(c, { dropPct: Number.NaN })).rejects.toMatchObject({
+      code: 'invalid_setting',
+    })
     expect(await loadSettingOverrides(c)).toEqual({})
+  })
+
+  it('snaps values to the registry step so integer settings stay integers', async () => {
+    const c = ctx()
+    await updateSettings(c, { cutStepsAlternative: 2100.5, activityFactor: 1.6123, dropPct: 7.3 })
+    expect(await loadSettingOverrides(c)).toEqual({
+      cutStepsAlternative: 2000,
+      activityFactor: 1.6,
+      dropPct: 7.5,
+    })
   })
 
   it('resets some or all overrides', async () => {
