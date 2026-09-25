@@ -27,7 +27,7 @@ import type {
   TrackStartRow,
   UserProfile,
 } from '@/domain/types'
-import { populateSeed } from './populate'
+import { ensureSeeded, populateSeed } from './populate'
 
 /** Unique per origin: throbbingmember69.github.io is shared by all of the user's Pages sites. */
 export const DB_NAME = 'exersise-applet'
@@ -108,6 +108,9 @@ export class AppDB extends Dexie {
       checkIns: 'id, phaseId, dueDate, &[phaseId+dueDate]',
       suggestions: 'id, kind, &key, status',
     })
-    if (opts.seed !== false) this.on('populate', populateSeed)
+    if (opts.seed !== false) {
+      this.on('populate', populateSeed)
+      this.on('ready', (db) => ensureSeeded(db))
+    }
   }
 }
