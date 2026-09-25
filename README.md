@@ -1,5 +1,7 @@
 # Exercise Applet
 
+[![CI & Deploy](https://github.com/throbbingmember69/Exersise-Applet/actions/workflows/ci-deploy.yml/badge.svg)](https://github.com/throbbingmember69/Exersise-Applet/actions/workflows/ci-deploy.yml)
+
 An offline-first phone app (PWA) for training and bulk/cut tracking:
 
 - **Workout logger:** pre-filled loads from double progression, per-set load/reps/RIR, and a rest timer
