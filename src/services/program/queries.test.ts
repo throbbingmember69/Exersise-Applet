@@ -6,6 +6,7 @@ import { insertSession } from '../training/testFixtures'
 import {
   archiveDay,
   archiveExercise,
+  archiveGym,
   archiveSlot,
   createGym,
   createSlot,
@@ -281,9 +282,39 @@ describe('getExerciseDetail', () => {
       exercises: [{ slotId: 'slot-lower-a-2', exerciseId: 'ex-leg-extension', sets: [[175, 10]] }],
     })
 
+    // Sessions where it was skipped, or only warmed up / had its sets voided, don't count.
+    await insertSession(c, {
+      programDayId: 'day-lower-b',
+      date: '2026-10-07',
+      exercises: [{ slotId: 'slot-lower-b-5', exerciseId: 'ex-leg-extension', sets: [] }],
+    })
+    await insertSession(c, {
+      programDayId: 'day-lower-b',
+      date: '2026-10-09',
+      exercises: [
+        {
+          slotId: 'slot-lower-b-5',
+          exerciseId: 'ex-leg-extension',
+          sets: [
+            { loadLb: 100, reps: 10, isWarmup: true },
+            { loadLb: 170, reps: 12, voided: true },
+          ],
+        },
+      ],
+    })
+    // The session being logged, at the hotel gym, holds that gym's Lower A track.
+    await insertSession(c, {
+      programDayId: 'day-lower-a',
+      gymId: gym2,
+      date: '2026-10-12',
+      status: 'in_progress',
+      exercises: [{ slotId: 'slot-lower-a-2', exerciseId: 'ex-leg-extension', sets: [] }],
+    })
+
     const detail = (await readOnly(c, () => getExerciseDetail(c, 'ex-leg-extension')))!
     expect(detail.exercise).toMatchObject({ id: 'ex-leg-extension', stepLb: 5 })
     expect(detail.gymSteps).toEqual([{ gymId: gym2, gymName: 'Hotel gym', stepLb: 7.5 }])
+    // Every track the program implies, per active gym for a machine, in day then gym order.
     expect(detail.trackStarts).toEqual([
       {
         trackKey: 'day-lower-a|ex-leg-extension|gym-1',
@@ -294,8 +325,37 @@ describe('getExerciseDetail', () => {
         startLoadLb: 170,
         calibrate: false,
         updatedAt: expect.any(Number),
+        editable: false,
+        lockedBy: 'history',
       },
-      expect.objectContaining({ dayName: 'Lower B', startLoadLb: 170 }),
+      {
+        trackKey: `day-lower-a|ex-leg-extension|${gym2}`,
+        dayId: 'day-lower-a',
+        dayName: 'Lower A',
+        scope: gym2,
+        gymName: 'Hotel gym',
+        startLoadLb: null,
+        calibrate: true,
+        updatedAt: null,
+        editable: false,
+        lockedBy: 'in_progress',
+      },
+      expect.objectContaining({
+        dayName: 'Lower B',
+        scope: 'gym-1',
+        startLoadLb: 170,
+        editable: false,
+        lockedBy: 'history',
+      }),
+      expect.objectContaining({
+        dayName: 'Lower B',
+        scope: gym2,
+        startLoadLb: null,
+        calibrate: true,
+        updatedAt: null,
+        editable: true,
+        lockedBy: null,
+      }),
     ])
     expect(detail.loggedSessionCount).toBe(2)
     expect(detail.lastLoggedOn).toBe('2026-10-02')
@@ -303,14 +363,100 @@ describe('getExerciseDetail', () => {
     expect(detail.usedInSlots).toHaveLength(2)
   })
 
+  it('counts only sessions where the exercise has working sets', async () => {
+    const c = ctx()
+    // A Push session where the lateral raise was skipped: snapshotted, but nothing logged.
+    await insertSession(c, {
+      programDayId: 'day-push',
+      date: '2026-09-29',
+      exercises: [
+        { slotId: 'slot-push-1', exerciseId: 'ex-incline-db-bench', sets: [[70, 10]] },
+        { slotId: 'slot-push-5', exerciseId: 'ex-lateral-raise', sets: [] },
+      ],
+    })
+    expect(await getExerciseDetail(c, 'ex-lateral-raise')).toMatchObject({
+      loggedSessionCount: 0,
+      lastLoggedOn: null,
+    })
+    expect(await getExerciseDetail(c, 'ex-incline-db-bench')).toMatchObject({
+      loggedSessionCount: 1,
+      lastLoggedOn: '2026-09-29',
+    })
+  })
+
   it('shows shared tracks without a gym, and null for an unknown exercise', async () => {
     const c = ctx()
     const detail = (await getExerciseDetail(c, 'ex-weighted-chin-up'))!
     expect(detail.trackStarts).toEqual([
-      expect.objectContaining({ scope: '*', gymName: null, startLoadLb: 50 }),
+      expect.objectContaining({ scope: '*', gymName: null, startLoadLb: 50, editable: true }),
     ])
     expect(detail).toMatchObject({ loggedSessionCount: 0, lastLoggedOn: null, hasHistory: false })
     expect(await getExerciseDetail(c, 'ex-nope')).toBeNull()
+  })
+
+  it('lists tracks with no start row: alternates, gym overrides and new gyms', async () => {
+    const c = ctx()
+    // The flat DB press is only an alternate (Push); a shared track with no row starts blank.
+    expect((await getExerciseDetail(c, 'ex-flat-db-press'))!.trackStarts).toEqual([
+      {
+        trackKey: 'day-push|ex-flat-db-press|*',
+        dayId: 'day-push',
+        dayName: 'Push',
+        scope: '*',
+        gymName: null,
+        startLoadLb: null,
+        calibrate: true,
+        updatedAt: null,
+        editable: true,
+        lockedBy: null,
+      },
+    ])
+    // A gym's override puts the leg press on Lower A too; as a machine it has a track per active
+    // gym. Archived slots and days, and archived gyms, imply nothing.
+    const hotel = await createGym(c, 'Hotel gym')
+    await setGymSlotOverride(c, hotel, 'slot-lower-a-1', 'ex-leg-press')
+    const old = await createGym(c, 'Old gym')
+    await archiveGym(c, old)
+    const regime = {
+      sets: 2,
+      repMin: 10,
+      repMax: 15,
+      rirMin: 0,
+      rirMax: 1,
+      restMinSec: 90,
+      restMaxSec: 90,
+    }
+    await createSlot(c, 'day-upper', { exerciseId: 'ex-leg-press', ...regime })
+    await archiveDay(c, 'day-upper')
+    await archiveSlot(c, await createSlot(c, 'day-pull', { exerciseId: 'ex-leg-press', ...regime }))
+    const keys = (await getExerciseDetail(c, 'ex-leg-press'))!.trackStarts.map((t) => t.trackKey)
+    expect(keys).toEqual([
+      'day-lower-a|ex-leg-press|gym-1',
+      `day-lower-a|ex-leg-press|${hotel}`,
+      'day-lower-b|ex-leg-press|gym-1',
+      `day-lower-b|ex-leg-press|${hotel}`,
+    ])
+  })
+
+  it('keeps stored starts of the current scope and hides ones of the other scope', async () => {
+    const c = ctx()
+    // A leftover shared row for a machine doesn't apply (setTrackStart would refuse it).
+    await c.db.trackStarts.put({
+      trackKey: 'day-lower-a|ex-leg-extension|*',
+      programDayId: 'day-lower-a',
+      exerciseId: 'ex-leg-extension',
+      gymScope: '*',
+      startLoadLb: 999,
+      calibrate: false,
+      updatedAt: 0,
+    })
+    // A stored start stays listed after its slot is archived.
+    await archiveSlot(c, 'slot-lower-b-5')
+    const tracks = (await getExerciseDetail(c, 'ex-leg-extension'))!.trackStarts
+    expect(tracks.map((t) => [t.trackKey, t.startLoadLb])).toEqual([
+      ['day-lower-a|ex-leg-extension|gym-1', 170],
+      ['day-lower-b|ex-leg-extension|gym-1', 170],
+    ])
   })
 })
 
