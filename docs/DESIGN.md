@@ -16,6 +16,12 @@
 >   - ΔT runs from the trend at the close of the day before the window to the trend on its last day, so normally D = L (the window length).
 >   - Only real trend points are used. If the trend starts inside the window, or the last days have no weigh-in, ΔT covers fewer days and D is the days it actually spans.
 >   - Window choice, logging thresholds, the disruption exclusion and the week-over-week cap follow finding #30 and finding #29 (see `src/domain/tdee.ts`).
+> - **Data and program services after the M2 review:**
+>   - **Track start loads:** `setTrackStart` is refused while a session in progress holds the track (`track_has_history`). Changing an exercise's `equipmentSpecific` (directly or through its load type) re-keys its track starts: per-gym → shared keeps one per day; shared → per-gym copies to every active gym.
+>   - **Export:** `exportBackup` checks its own output and throws `export_invalid` rather than write an unrestorable file.
+>   - **Import validation:** import also checks references and requires one profile and at least one active gym.
+>   - **Import confirmation:** `importBackup` returns `needs_confirm` with per-table `current`/`incoming` counts and a `shrinking` list whenever any history or user-created kind would lose rows. A restore sets `lastBackupAt` to the file's export time.
+>   - **Exercise detail:** it lists every implied track with `editable`, and counts only sessions with working sets.
 
 # Implementation plan: Exersise Applet (offline-first Android PWA)
 

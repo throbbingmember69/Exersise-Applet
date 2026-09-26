@@ -1,6 +1,6 @@
 import type { Table } from 'dexie'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, TABLE_NAMES } from '@/db/backupSchema'
+import { BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, TABLE_NAMES, type Backup } from '@/db/backupSchema'
 import type {
   BodyEntry,
   CheckIn,
@@ -12,8 +12,10 @@ import type {
 } from '@/domain/types'
 import { createTestCtx, type ServiceCtx } from '../context'
 import { isServiceError, type ServiceError } from '../errors'
+import { createDay, createExercise, createGym } from '../program/commands'
 import { insertSession } from '../training/testFixtures'
 import {
+  LAST_BACKUP_AT_KEY,
   backupFileName,
   exportBackup,
   getBackupReminder,
@@ -45,6 +47,18 @@ async function dumpAll(c: Pick<ServiceCtx, 'db'>): Promise<Record<string, unknow
   const out: Record<string, unknown[]> = {}
   for (const name of TABLE_NAMES) out[name] = await c.db.table(name).toArray()
   return out
+}
+
+/** dumpAll without the lastBackupAt stamp a restore adds. */
+async function dumpRestorable(c: Pick<ServiceCtx, 'db'>): Promise<Record<string, unknown[]>> {
+  const out = await dumpAll(c)
+  out.appState = out.appState!.filter((r) => (r as { key: string }).key !== LAST_BACKUP_AT_KEY)
+  return out
+}
+
+/** An exported backup as import sees it (plain JSON), to break on purpose. */
+async function exportedJson(c: Pick<ServiceCtx, 'db' | 'now'>): Promise<Backup> {
+  return JSON.parse(serializeBackup(await exportBackup(c, { appVersion: '0.1.0' }))) as Backup
 }
 
 async function historyTotal(c: Pick<ServiceCtx, 'db'>): Promise<number> {
@@ -396,6 +410,40 @@ describe('exportBackup', () => {
   it('names the file after the date', () => {
     expect(backupFileName(d('2026-09-24'))).toBe('exersise-backup-2026-09-24.json')
   })
+
+  it('refuses to produce a file that import would reject, listing every problem', async () => {
+    const c = ctx()
+    await addRealisticHistory(c)
+    // A stored row the import schema rejects (a fractional steps setting copied into a check-in)
+    // and a row pointing at a program day that no longer exists.
+    await c.db.checkIns.update('ci-1', { stepsAlternative: 2100.5 })
+    await c.db.trackStarts.put({
+      trackKey: 'day-gone|ex-smith-squat|gym-1',
+      programDayId: 'day-gone',
+      exerciseId: 'ex-smith-squat',
+      gymScope: 'gym-1',
+      startLoadLb: 200,
+      calibrate: false,
+      updatedAt: T0,
+    })
+    const e = await expectServiceError(exportBackup(c, { appVersion: '0.1.0' }), 'export_invalid')
+    expect(e.message).toBe(
+      "1 saved row can't be restored from a backup, so no backup file was made. Nothing was changed.",
+    )
+    expect(e.detail?.errors).toEqual([
+      'tables.checkIns[0].stepsAlternative: expected integer, got 2100.5',
+    ])
+
+    // Once the row parses, the reference and structure checks run too.
+    await c.db.checkIns.update('ci-1', { stepsAlternative: 2100 })
+    await c.db.gyms.toCollection().modify({ archivedAt: T0 })
+    const e2 = await expectServiceError(exportBackup(c, { appVersion: '0.1.0' }), 'export_invalid')
+    expect(e2.message).toMatch(/^2 saved rows can't be restored/)
+    expect(e2.detail?.errors).toEqual([
+      'tables.gyms: expected at least 1 active (not archived) gym, got 0',
+      'tables.trackStarts[0].programDayId: no programDays row has id "day-gone"',
+    ])
+  })
 })
 
 describe('importBackup', () => {
@@ -410,7 +458,9 @@ describe('importBackup', () => {
     const result = await importBackup(target, text)
 
     expect(result.status).toBe('imported')
-    const after = await dumpAll(target)
+    // The restore stamps lastBackupAt (the reminder counts from the export); all else is equal.
+    const after = await dumpRestorable(target)
+    expect(await getBackupReminder(target)).toMatchObject({ due: false })
     for (const name of TABLE_NAMES) {
       expect(before[name]!.length, name).toBeGreaterThan(0)
       expect(after[name], name).toEqual(before[name])
@@ -420,9 +470,12 @@ describe('importBackup', () => {
         Object.fromEntries(TABLE_NAMES.map((n) => [n, before[n]!.length])),
       )
     }
-    // Exporting again reproduces the same backup.
-    const again = serializeBackup(await exportBackup(target, { appVersion: '0.1.0' }))
-    expect(JSON.parse(again)).toEqual(JSON.parse(text))
+    // Exporting again reproduces the same backup (plus the restore's lastBackupAt stamp).
+    const again = JSON.parse(
+      serializeBackup(await exportBackup(target, { appVersion: '0.1.0' })),
+    ) as Backup
+    again.tables.appState = again.tables.appState.filter((r) => r.key !== LAST_BACKUP_AT_KEY)
+    expect(again).toEqual(JSON.parse(text))
   })
 
   it('replaces everything on the device, dropping rows the backup does not have', async () => {
@@ -448,7 +501,7 @@ describe('importBackup', () => {
     expect(await importBackup(target, text)).toMatchObject({ status: 'imported' })
     expect(await target.db.sessions.get('sess-local-only')).toBeUndefined()
     expect(await target.db.gyms.get('gym-local')).toBeUndefined()
-    expect(await dumpAll(target)).toEqual(await dumpAll(source))
+    expect(await dumpRestorable(target)).toEqual(await dumpAll(source))
   })
 
   it('asks before restoring a backup with less history than the device, then restores on confirm', async () => {
@@ -459,24 +512,21 @@ describe('importBackup', () => {
     const text = serializeBackup(await exportBackup(old, { appVersion: '0.1.0' }))
 
     const result = await importBackup(device, text)
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       status: 'needs_confirm',
-      current: {
-        sessions: 6,
-        setLogs: 19,
-        bodyEntries: 5,
-        nutritionEntries: 3,
-        total: 33,
-      },
-      incoming: { sessions: 0, setLogs: 0, bodyEntries: 1, nutritionEntries: 0, total: 1 },
+      current: { sessions: 6, setLogs: 19, bodyEntries: 4, nutritionEntries: 3 },
+      incoming: { sessions: 0, setLogs: 0, bodyEntries: 0, nutritionEntries: 0 },
     })
+    expect(result.status === 'needs_confirm' && result.shrinking).toEqual(
+      expect.arrayContaining(['sessions', 'setLogs', 'bodyEntries', 'nutritionEntries']),
+    )
     expect(await dumpAll(device)).toEqual(deviceRows)
 
     expect(await importBackup(device, text, { confirmFewerRows: true })).toMatchObject({
       status: 'imported',
     })
     expect(await historyTotal(device)).toBe(1)
-    expect(await dumpAll(device)).toEqual(await dumpAll(old))
+    expect(await dumpRestorable(device)).toEqual(await dumpAll(old))
   })
 
   it('rejects text that is not JSON, leaving the data untouched', async () => {
@@ -552,9 +602,84 @@ describe('importBackup', () => {
 
   it('rejects a backup without a profile', async () => {
     const c = ctx({ seed: false })
-    const text = serializeBackup(await exportBackup(c, { appVersion: '0.1.0' }))
-    const e = await expectServiceError(importBackup(c, text), 'invalid_backup')
+    const b = await exportedJson(ctx())
+    b.tables.profile = []
+    const e = await expectServiceError(importBackup(c, JSON.stringify(b)), 'invalid_backup')
     expect(e.detail?.errors).toEqual(['tables.profile: expected exactly 1 profile row, got 0'])
+  })
+
+  it('rejects broken references and a file with no active gym, listing each', async () => {
+    const c = ctx({ seed: false })
+    const b = await exportedJson(ctx())
+    b.tables.exercises = b.tables.exercises.filter((e) => e.id !== 'ex-smith-squat')
+    b.tables.gyms = b.tables.gyms.map((g) => ({ ...g, archivedAt: 1 }))
+    const e = await expectServiceError(importBackup(c, JSON.stringify(b)), 'invalid_backup')
+    const errors = e.detail?.errors as string[]
+    expect(errors[0]).toBe('tables.gyms: expected at least 1 active (not archived) gym, got 0')
+    expect(errors).toContain(
+      'tables.programSlots[0].defaultExerciseId: no exercises row has id "ex-smith-squat"',
+    )
+    expect(errors.some((m) => m.startsWith('tables.trackStarts['))).toBe(true)
+    expect(await c.db.profile.count()).toBe(0) // nothing written
+  })
+
+  it('asks before a backup that would lose one kind of data even if it has more of another', async () => {
+    const device = ctx()
+    await addRealisticHistory(device)
+    // The file: no training at all, but lots of nutrition and a custom gym, exercise and day.
+    const other = ctx()
+    for (let i = 0; i < 30; i++) {
+      await other.db.nutritionEntries.put({
+        date: `2026-08-${String(i + 1).padStart(2, '0')}` as never,
+        kcal: 3000,
+        proteinG: null,
+        carbsG: null,
+        fatG: null,
+        steps: null,
+        updatedAt: 0,
+      })
+    }
+    await createGym(other, 'Hotel')
+    await createDay(other, 'Arms', null)
+    await createExercise(other, {
+      name: 'Band pull-apart',
+      loadType: 'cable',
+      stepLb: 5,
+      defaultRegime: {
+        sets: 2,
+        repMin: 15,
+        repMax: 25,
+        rirMin: 0,
+        rirMax: 1,
+        restMinSec: 60,
+        restMaxSec: 60,
+      },
+      muscleWeights: { rear_delts: 1 },
+    })
+    const text = serializeBackup(await exportBackup(other, { appVersion: '0.1.0' }))
+    const result = await importBackup(device, text)
+    expect(result.status).toBe('needs_confirm')
+    if (result.status !== 'needs_confirm') return
+    expect(result.shrinking).toEqual(
+      expect.arrayContaining(['sessions', 'setLogs', 'phases', 'checkIns']),
+    )
+    expect(result.shrinking).not.toContain('nutritionEntries')
+    expect(result.incoming).toMatchObject({
+      nutritionEntries: 30,
+      customGyms: 1,
+      customExercises: 1,
+      customProgramDays: 1,
+    })
+  })
+
+  it('starts the backup reminder from when the restored file was made', async () => {
+    const source = ctx()
+    await addRealisticHistory(source)
+    const exportedAt = source.now()
+    const text = serializeBackup(await exportBackup(source, { appVersion: '0.1.0' }))
+    const target = ctx({ seed: false })
+    await importBackup(target, text)
+    expect(await getBackupReminder(target)).toMatchObject({ lastBackupAt: exportedAt, due: false })
   })
 
   it('leaves the existing data untouched when the write fails part-way', async () => {

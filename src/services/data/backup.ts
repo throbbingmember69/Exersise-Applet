@@ -15,6 +15,7 @@ import {
 } from '@/db/backupSchema'
 import { daysBetween, localDateOf } from '@/domain/dates'
 import type { EpochMs, LocalDate } from '@/domain/types'
+import { SEED } from '@/seed'
 import { today, type ServiceCtx } from '../context'
 import { ServiceError } from '../errors'
 import { getAppState, loadSettings, setAppState } from '../settings'
@@ -25,18 +26,35 @@ export const LAST_BACKUP_AT_KEY = 'lastBackupAt'
 /** Rows per table. */
 export type TableCounts = { [K in TableName]: number }
 
-/** The logged history a restore could lose: the rows that can't be re-created from the seed. */
-export interface HistoryCounts {
-  sessions: number
-  setLogs: number
-  bodyEntries: number
-  nutritionEntries: number
-  total: number
-}
+/**
+ * What a restore could lose, per table: logged history and everything the user created, i.e. rows
+ * the seed can't re-create (user weigh-ins, not the seed baseline; custom exercises, gyms and days).
+ */
+export const HISTORY_TABLES = [
+  'sessions',
+  'setLogs',
+  'bodyEntries',
+  'nutritionEntries',
+  'phases',
+  'targetRevisions',
+  'checkIns',
+  'customExercises',
+  'customGyms',
+  'customProgramDays',
+] as const
+
+export type HistoryTable = (typeof HISTORY_TABLES)[number]
+export type HistoryCounts = { [K in HistoryTable]: number }
 
 export type ImportResult =
   | { status: 'imported'; counts: TableCounts }
-  | { status: 'needs_confirm'; current: HistoryCounts; incoming: HistoryCounts }
+  | {
+      status: 'needs_confirm'
+      current: HistoryCounts
+      incoming: HistoryCounts
+      /** The kinds of data the device has more of than the backup (would be lost). */
+      shrinking: HistoryTable[]
+    }
 
 export interface ImportOptions {
   /** Go ahead even when the backup holds less history than the device. */
@@ -55,13 +73,26 @@ export async function exportBackup(
     )
     return Object.fromEntries(entries) as BackupTables
   })
-  return {
+  const backup: Backup = {
     format: BACKUP_FORMAT,
     schemaVersion: BACKUP_SCHEMA_VERSION,
     appVersion: opts.appVersion,
     exportedAt: ctx.now(),
     tables,
   }
+  // Check the file exactly as import will read it: a backup that can't be restored is worse than
+  // no backup (restore is all-or-nothing, possibly after the device is gone).
+  const errors = restoreProblems(JSON.parse(serializeBackup(backup)))
+  if (errors.length > 0) {
+    const n = errors.length
+    const rows = n === 1 ? 'row' : 'rows'
+    throw new ServiceError(
+      'export_invalid',
+      `${n} saved ${rows} can't be restored from a backup, so no backup file was made. Nothing was changed.`,
+      { errors },
+    )
+  }
+  return backup
 }
 
 export function serializeBackup(backup: Backup): string {
@@ -79,8 +110,9 @@ export function backupFileName(date: LocalDate): string {
  * Throws ServiceError 'invalid_backup' (detail.errors lists every problem) for text that isn't a
  * valid backup, 'newer_version' for a file from a newer app, and 'restore_failed' if the database
  * write fails (nothing is changed in that case). Returns `needs_confirm` instead of importing when
- * the file has fewer sessions + sets + body entries + nutrition entries than the device, unless
- * `confirmFewerRows` is set.
+ * the device has more of ANY kind of history or user-created data than the file (see
+ * HISTORY_TABLES), unless `confirmFewerRows` is set. After a restore, the backup reminder counts
+ * from when the file was made.
  */
 export async function importBackup(
   ctx: Pick<ServiceCtx, 'db'>,
@@ -93,14 +125,22 @@ export async function importBackup(
   try {
     return await db.transaction('rw', [...TABLE_NAMES], async (): Promise<ImportResult> => {
       const current = await currentHistoryCounts(ctx)
-      if (incoming.total < current.total && !opts.confirmFewerRows) {
-        return { status: 'needs_confirm', current, incoming }
+      const shrinking = HISTORY_TABLES.filter((t) => incoming[t] < current[t])
+      if (shrinking.length > 0 && !opts.confirmFewerRows) {
+        return { status: 'needs_confirm', current, incoming, shrinking }
       }
       for (const name of TABLE_NAMES) await db.table(name).clear()
       for (const name of TABLE_NAMES) {
         const rows = backup.tables[name]
         if (rows.length > 0) await db.table(name).bulkAdd(rows)
       }
+      // The file is a backup as of its export: the reminder counts from then.
+      const stamped = backup.tables.appState.find((r) => r.key === LAST_BACKUP_AT_KEY)?.value
+      const lastBackupAt = Math.max(
+        typeof stamped === 'number' && Number.isFinite(stamped) ? stamped : 0,
+        backup.exportedAt,
+      )
+      await db.appState.put({ key: LAST_BACKUP_AT_KEY, value: lastBackupAt })
       return { status: 'imported', counts: tableCounts(backup.tables) }
     })
   } catch (e) {
@@ -137,9 +177,24 @@ export function validateBackupText(jsonText: string): Backup {
   }
   const parsed = parseBackup(migrated)
   if (!parsed.ok) throw invalid(problemsMessage(parsed.errors.length), parsed.errors)
-  const errors = [...uniqueIndexErrors(parsed.backup.tables), ...requiredRowErrors(parsed.backup)]
+  const errors = integrityErrors(parsed.backup)
   if (errors.length > 0) throw invalid(problemsMessage(errors.length), errors)
   return parsed.backup
+}
+
+/** Every reason a (current-version) backup object couldn't be restored; [] when it can. */
+function restoreProblems(raw: unknown): string[] {
+  const parsed = parseBackup(raw)
+  return parsed.ok ? integrityErrors(parsed.backup) : parsed.errors
+}
+
+/** Checks beyond the row schema: what the app needs to start, unique indexes, references. */
+function integrityErrors(backup: Backup): string[] {
+  return [
+    ...requiredRowErrors(backup),
+    ...uniqueIndexErrors(backup.tables),
+    ...referenceErrors(backup.tables),
+  ]
 }
 
 /** Record that a backup file was saved (drives the backup reminder). */
@@ -178,26 +233,65 @@ export async function getBackupReminder(
 
 export async function currentHistoryCounts(ctx: Pick<ServiceCtx, 'db'>): Promise<HistoryCounts> {
   const { db } = ctx
-  const [sessions, setLogs, bodyEntries, nutritionEntries] = await Promise.all([
-    db.sessions.count(),
-    db.setLogs.count(),
-    db.bodyEntries.count(),
-    db.nutritionEntries.count(),
+  const [sessions, setLogs, bodyEntries, nutritionEntries, phases, targetRevisions, checkIns] =
+    await Promise.all([
+      db.sessions.count(),
+      db.setLogs.count(),
+      db.bodyEntries.filter((b) => b.source === 'user').count(),
+      db.nutritionEntries.count(),
+      db.phases.count(),
+      db.targetRevisions.count(),
+      db.checkIns.count(),
+    ])
+  const [exercises, gyms, programDays] = await Promise.all([
+    db.exercises.toCollection().primaryKeys(),
+    db.gyms.toCollection().primaryKeys(),
+    db.programDays.toCollection().primaryKeys(),
   ])
-  return withTotal({ sessions, setLogs, bodyEntries, nutritionEntries })
+  return {
+    sessions,
+    setLogs,
+    bodyEntries,
+    nutritionEntries,
+    phases,
+    targetRevisions,
+    checkIns,
+    customExercises: countCustom(exercises, SEED_EXERCISE_IDS),
+    customGyms: countCustom(gyms, SEED_GYM_IDS),
+    customProgramDays: countCustom(programDays, SEED_DAY_IDS),
+  }
 }
 
-function historyCounts(tables: BackupTables): HistoryCounts {
-  return withTotal({
-    sessions: tables.sessions.length,
-    setLogs: tables.setLogs.length,
-    bodyEntries: tables.bodyEntries.length,
-    nutritionEntries: tables.nutritionEntries.length,
-  })
+const SEED_EXERCISE_IDS = new Set(SEED.exercises.map((e) => e.id))
+const SEED_GYM_IDS = new Set(SEED.gyms.map((g) => g.id))
+const SEED_DAY_IDS = new Set(SEED.programDays.map((d) => d.id))
+
+function countCustom(ids: readonly unknown[], seedIds: ReadonlySet<string>): number {
+  return ids.filter((id) => !seedIds.has(String(id))).length
 }
 
-function withTotal(c: Omit<HistoryCounts, 'total'>): HistoryCounts {
-  return { ...c, total: c.sessions + c.setLogs + c.bodyEntries + c.nutritionEntries }
+function historyCounts(t: BackupTables): HistoryCounts {
+  return {
+    sessions: t.sessions.length,
+    setLogs: t.setLogs.length,
+    bodyEntries: t.bodyEntries.filter((b) => b.source === 'user').length,
+    nutritionEntries: t.nutritionEntries.length,
+    phases: t.phases.length,
+    targetRevisions: t.targetRevisions.length,
+    checkIns: t.checkIns.length,
+    customExercises: countCustom(
+      t.exercises.map((e) => e.id),
+      SEED_EXERCISE_IDS,
+    ),
+    customGyms: countCustom(
+      t.gyms.map((g) => g.id),
+      SEED_GYM_IDS,
+    ),
+    customProgramDays: countCustom(
+      t.programDays.map((d) => d.id),
+      SEED_DAY_IDS,
+    ),
+  }
 }
 
 function tableCounts(tables: BackupTables): TableCounts {
@@ -256,10 +350,70 @@ function duplicates(
   return errors
 }
 
+/** Rows the app can't run without: one profile and at least one active gym. */
 function requiredRowErrors(backup: Backup): string[] {
-  return backup.tables.profile.length === 1
-    ? []
-    : [`tables.profile: expected exactly 1 profile row, got ${backup.tables.profile.length}`]
+  const { profile, gyms } = backup.tables
+  const errors: string[] = []
+  if (profile.length !== 1) {
+    errors.push(`tables.profile: expected exactly 1 profile row, got ${profile.length}`)
+  }
+  const active = gyms.filter((g) => g.archivedAt === null).length
+  if (active < 1) {
+    errors.push(`tables.gyms: expected at least 1 active (not archived) gym, got ${active}`)
+  }
+  return errors
+}
+
+/** Every id a row points at must exist in its table (else the app fails after the restore). */
+function referenceErrors(t: BackupTables): string[] {
+  const ids = {
+    programDays: new Set(t.programDays.map((r) => r.id)),
+    exercises: new Set(t.exercises.map((r) => r.id)),
+    gyms: new Set(t.gyms.map((r) => r.id)),
+    programSlots: new Set(t.programSlots.map((r) => r.id)),
+    sessions: new Set(t.sessions.map((r) => r.id)),
+    sessionExercises: new Set(t.sessionExercises.map((r) => r.id)),
+    phases: new Set(t.phases.map((r) => r.id)),
+  }
+  type Target = keyof typeof ids
+  const errors: string[] = []
+  const check = (table: TableName, i: number, field: string, value: string, target: Target) => {
+    if (!ids[target].has(value)) {
+      errors.push(
+        `tables.${table}[${i}].${field}: no ${target} row has id ${JSON.stringify(value)}`,
+      )
+    }
+  }
+  t.programSlots.forEach((r, i) => {
+    check('programSlots', i, 'programDayId', r.programDayId, 'programDays')
+    check('programSlots', i, 'defaultExerciseId', r.defaultExerciseId, 'exercises')
+    r.alternateExerciseIds.forEach((id, j) =>
+      check('programSlots', i, `alternateExerciseIds[${j}]`, id, 'exercises'),
+    )
+  })
+  t.gymSlotOverrides.forEach((r, i) => {
+    check('gymSlotOverrides', i, 'gymId', r.gymId, 'gyms')
+    check('gymSlotOverrides', i, 'slotId', r.slotId, 'programSlots')
+    check('gymSlotOverrides', i, 'exerciseId', r.exerciseId, 'exercises')
+  })
+  t.gymExerciseSettings.forEach((r, i) => {
+    check('gymExerciseSettings', i, 'gymId', r.gymId, 'gyms')
+    check('gymExerciseSettings', i, 'exerciseId', r.exerciseId, 'exercises')
+  })
+  t.trackStarts.forEach((r, i) => {
+    check('trackStarts', i, 'programDayId', r.programDayId, 'programDays')
+    check('trackStarts', i, 'exerciseId', r.exerciseId, 'exercises')
+  })
+  t.sessionExercises.forEach((r, i) =>
+    check('sessionExercises', i, 'sessionId', r.sessionId, 'sessions'),
+  )
+  t.setLogs.forEach((r, i) => {
+    check('setLogs', i, 'sessionId', r.sessionId, 'sessions')
+    check('setLogs', i, 'sessionExerciseId', r.sessionExerciseId, 'sessionExercises')
+  })
+  t.targetRevisions.forEach((r, i) => check('targetRevisions', i, 'phaseId', r.phaseId, 'phases'))
+  t.checkIns.forEach((r, i) => check('checkIns', i, 'phaseId', r.phaseId, 'phases'))
+  return errors
 }
 
 function problemsMessage(n: number): string {

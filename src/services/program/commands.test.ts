@@ -4,6 +4,7 @@ import { createTestCtx, type ServiceCtx } from '../context'
 import { isServiceError, type ServiceError } from '../errors'
 import { updateSettings } from '../settings'
 import { loadTrainingModel } from '../training/model'
+import { abandonSession, finishSession, logSet, startSession } from '../training/session'
 import { insertSession } from '../training/testFixtures'
 import {
   archiveDay,
@@ -77,6 +78,24 @@ async function programSnapshot(c: Pick<ServiceCtx, 'db'>) {
 async function weeklySets(c: Pick<ServiceCtx, 'db'>, muscleId: string): Promise<number> {
   const overview = await getProgramOverview(c)
   return overview.weekly.muscles.find((m) => m.muscleId === muscleId)!.sets
+}
+
+/** What the next session of a day would pre-fill for a slot at a gym. */
+async function prescribe(
+  c: Pick<ServiceCtx, 'db'>,
+  dayId: string,
+  slotId: string,
+  gymId = 'gym-1',
+) {
+  const model = await loadTrainingModel(c)
+  const slot = model.slotsOf(dayId).find((s) => s.id === slotId)!
+  return model.prescriptionFor({
+    programDayId: dayId,
+    regime: slot,
+    exerciseId: model.resolveSlotExercise(slot, gymId).exercise.id,
+    gymId,
+    isDeload: false,
+  })
 }
 
 const REGIME: Regime = {
@@ -389,6 +408,39 @@ describe('program slots', () => {
     await restoreSlot(c, 'slot-upper-2')
     expect((await c.db.programSlots.get('slot-upper-2'))!.archivedAt).toBeNull()
   })
+
+  it('restoring a slot drops gym overrides that point at an exercise archived meanwhile', async () => {
+    const c = ctx()
+    const hotel = await createGym(c, 'Hotel')
+    await setGymSlotOverride(c, hotel, 'slot-upper-2', 'ex-leg-press')
+    await setGymSlotOverride(c, 'gym-1', 'slot-upper-2', 'ex-machine-fly')
+    await archiveSlot(c, 'slot-upper-2')
+    // Allowed: an archived slot's override isn't a use (like an archived slot's default).
+    await archiveExercise(c, 'ex-leg-press')
+
+    expect(await restoreSlot(c, 'slot-upper-2')).toEqual({
+      droppedOverrides: [{ gymId: hotel, exerciseId: 'ex-leg-press' }],
+    })
+    // The override to an active exercise stays; the archived one is gone.
+    expect(await c.db.gymSlotOverrides.where('slotId').equals('slot-upper-2').toArray()).toEqual([
+      expect.objectContaining({ gymId: 'gym-1', exerciseId: 'ex-machine-fly' }),
+    ])
+    const overview = await getProgramOverview(c, { gymId: hotel })
+    const view = overview.days.flatMap((d) => d.slots).find((s) => s.slot.id === 'slot-upper-2')!
+    expect(view).toMatchObject({
+      isOverride: false,
+      exercise: { id: 'ex-cable-crossover', archived: false },
+    })
+    // A session at the hotel gym uses the slot's default, not the archived exercise.
+    const sessionId = await startSession(c, { gymId: hotel, programDayId: 'day-upper' })
+    const snapshots = await c.db.sessionExercises.where('sessionId').equals(sessionId).toArray()
+    expect(snapshots.find((se) => se.slotId === 'slot-upper-2')).toMatchObject({
+      exerciseId: 'ex-cable-crossover',
+      swapKind: 'none',
+    })
+    // Restoring an active slot is a no-op.
+    expect(await restoreSlot(c, 'slot-upper-2')).toEqual({ droppedOverrides: [] })
+  })
 })
 
 describe('program edits affect only future sessions', () => {
@@ -470,6 +522,171 @@ describe('program edits affect only future sessions', () => {
         isDeload: false,
       }),
     ).toMatchObject({ loadLb: 225, sets: 5, repTargets: [5, 5, 5, 5, 5] })
+  })
+})
+
+describe('changing equipmentSpecific keeps start loads with their tracks', () => {
+  const startsOf = async (c: Pick<ServiceCtx, 'db'>, exerciseId: string) =>
+    (await c.db.trackStarts.where('exerciseId').equals(exerciseId).toArray()).map((t) => [
+      t.trackKey,
+      t.startLoadLb,
+      t.calibrate,
+    ])
+
+  it('per gym → shared keeps one start per day (the first gym by order with one) and past results', async () => {
+    const c = ctx()
+    const sessionId = await insertSession(c, {
+      programDayId: 'day-lower-a',
+      date: '2026-09-28',
+      exercises: [
+        {
+          slotId: 'slot-lower-a-1',
+          exerciseId: 'ex-smith-squat',
+          sets: [
+            [220, 10],
+            [220, 10],
+            [220, 10],
+            [220, 10],
+          ],
+        },
+      ],
+    })
+    const resultsBefore = (await loadTrainingModel(c)).sessionResults(sessionId)
+    expect([...resultsBefore.values()].map((r) => r.branch)).toEqual(['step'])
+    const hotel = await createGym(c, 'Hotel gym')
+    await setTrackStart(c, 'day-lower-a', 'ex-smith-squat', hotel, {
+      startLoadLb: 180,
+      calibrate: true,
+    })
+    c.advance(1000)
+
+    await updateExercise(c, 'ex-smith-squat', { equipmentSpecific: false })
+    expect(await c.db.trackStarts.where('exerciseId').equals('ex-smith-squat').toArray()).toEqual([
+      {
+        trackKey: 'day-lower-a|ex-smith-squat|*',
+        programDayId: 'day-lower-a',
+        exerciseId: 'ex-smith-squat',
+        gymScope: '*',
+        startLoadLb: 220,
+        calibrate: false,
+        updatedAt: T0 + 1000,
+      },
+    ])
+    expect((await loadTrainingModel(c)).sessionResults(sessionId)).toEqual(resultsBefore)
+    expect(await prescribe(c, 'day-lower-a', 'slot-lower-a-1')).toMatchObject({
+      loadLb: 230,
+      branch: 'step',
+    })
+    // Without history the start carries over too (no silent switch to calibration).
+    await updateExercise(c, 'ex-leg-extension', { equipmentSpecific: false })
+    expect(await prescribe(c, 'day-lower-a', 'slot-lower-a-2')).toMatchObject({
+      loadLb: 170,
+      isCalibration: false,
+    })
+  })
+
+  it('per gym → shared falls back to a later gym when the first has no start for a day', async () => {
+    const c = ctx()
+    const hotel = await createGym(c, 'Hotel gym')
+    await c.db.trackStarts.delete('day-lower-b|ex-leg-extension|gym-1')
+    await setTrackStart(c, 'day-lower-b', 'ex-leg-extension', hotel, {
+      startLoadLb: 150,
+      calibrate: false,
+    })
+    await setTrackStart(c, 'day-lower-a', 'ex-leg-extension', hotel, {
+      startLoadLb: 140,
+      calibrate: true,
+    })
+    await updateExercise(c, 'ex-leg-extension', { equipmentSpecific: false })
+    expect(await startsOf(c, 'ex-leg-extension')).toEqual([
+      ['day-lower-a|ex-leg-extension|*', 170, false],
+      ['day-lower-b|ex-leg-extension|*', 150, false],
+    ])
+  })
+
+  it('shared → per gym copies each start to every active gym, keeping past results', async () => {
+    const c = ctx()
+    const sessionId = await insertSession(c, {
+      programDayId: 'day-push',
+      date: '2026-09-29',
+      exercises: [
+        {
+          slotId: 'slot-push-1',
+          exerciseId: 'ex-incline-db-bench',
+          sets: [
+            [70, 10],
+            [70, 10],
+            [70, 10],
+          ],
+        },
+      ],
+    })
+    const resultsBefore = (await loadTrainingModel(c)).sessionResults(sessionId)
+    const hotel = await createGym(c, 'Hotel gym')
+    const old = await createGym(c, 'Old gym')
+    await archiveGym(c, old)
+
+    await updateExercise(c, 'ex-incline-db-bench', { equipmentSpecific: true })
+    expect(await startsOf(c, 'ex-incline-db-bench')).toEqual([
+      ['day-push|ex-incline-db-bench|gym-1', 70, false],
+      [`day-push|ex-incline-db-bench|${hotel}`, 70, false],
+    ])
+    expect((await loadTrainingModel(c)).sessionResults(sessionId)).toEqual(resultsBefore)
+    expect(await prescribe(c, 'day-push', 'slot-push-1')).toMatchObject({ loadLb: 75 })
+    // The new gym's track starts where the shared one did, not with calibration.
+    expect(await prescribe(c, 'day-push', 'slot-push-1', hotel)).toMatchObject({
+      loadLb: 70,
+      isCalibration: false,
+    })
+  })
+
+  it('a load-type change that moves equipmentSpecific keeps the starts and past results', async () => {
+    const c = ctx()
+    const sessionId = await insertSession(c, {
+      programDayId: 'day-lower-b',
+      date: '2026-10-02',
+      exercises: [
+        {
+          slotId: 'slot-lower-b-4',
+          exerciseId: 'ex-hip-thrust',
+          sets: [
+            [200, 12],
+            [200, 12],
+            [200, 12],
+          ],
+        },
+      ],
+    })
+    const resultsBefore = (await loadTrainingModel(c)).sessionResults(sessionId)
+    expect([...resultsBefore.values()].map((r) => r.branch)).toEqual(['step'])
+
+    // Finding #45: correcting a seeded load type (machine → barbell) makes the track shared.
+    await updateExercise(c, 'ex-hip-thrust', { loadType: 'barbell' })
+    expect(await startsOf(c, 'ex-hip-thrust')).toEqual([
+      ['day-lower-a|ex-hip-thrust|*', 200, false],
+      ['day-lower-b|ex-hip-thrust|*', 200, false],
+    ])
+    expect((await loadTrainingModel(c)).sessionResults(sessionId)).toEqual(resultsBefore)
+    expect(await prescribe(c, 'day-lower-a', 'slot-lower-a-4')).toMatchObject({
+      loadLb: 200,
+      isCalibration: false,
+    })
+    expect(await prescribe(c, 'day-lower-b', 'slot-lower-b-4')).toMatchObject({ loadLb: 210 })
+
+    // And back: barbell → cable makes it per gym again, with the same starts.
+    await updateExercise(c, 'ex-hip-thrust', { loadType: 'cable' })
+    expect(await startsOf(c, 'ex-hip-thrust')).toEqual([
+      ['day-lower-a|ex-hip-thrust|gym-1', 200, false],
+      ['day-lower-b|ex-hip-thrust|gym-1', 200, false],
+    ])
+    expect((await loadTrainingModel(c)).sessionResults(sessionId)).toEqual(resultsBefore)
+    // A change that keeps the scope leaves the rows alone.
+    const rows = await c.db.trackStarts.where('exerciseId').equals('ex-hip-thrust').toArray()
+    c.advance(1000)
+    await updateExercise(c, 'ex-hip-thrust', { loadType: 'machine', stepLb: 5 })
+    expect(await c.db.trackStarts.where('exerciseId').equals('ex-hip-thrust').toArray()).toEqual(
+      rows,
+    )
   })
 })
 
@@ -736,18 +953,6 @@ describe('gyms', () => {
 })
 
 describe('setTrackStart', () => {
-  async function prescribe(c: TestCtx, dayId: string, slotId: string, gymId = 'gym-1') {
-    const model = await loadTrainingModel(c)
-    const slot = model.slotsOf(dayId).find((s) => s.id === slotId)!
-    return model.prescriptionFor({
-      programDayId: dayId,
-      regime: slot,
-      exerciseId: model.resolveSlotExercise(slot, gymId).exercise.id,
-      gymId,
-      isDeload: false,
-    })
-  }
-
   it('sets where a track starts', async () => {
     const c = ctx()
     await setTrackStart(c, 'day-lower-a', 'ex-smith-squat', 'gym-1', {
@@ -833,9 +1038,83 @@ describe('setTrackStart', () => {
     )
     expect(e.message).toMatch(/Smith machine squat already has logged sessions/)
     expect((await c.db.trackStarts.get('day-lower-a|ex-smith-squat|gym-1'))!.startLoadLb).toBe(210)
+    expect(e.detail).toEqual({ reason: 'history' })
     // Other tracks of the same exercise are unaffected: Lower A at another gym has no history.
     const gym2 = await createGym(c, 'Hotel gym')
     await setTrackStart(c, 'day-lower-a', 'ex-smith-squat', gym2, start)
+  })
+
+  it('is refused while the session being logged holds the track, so that session is scored from its own start', async () => {
+    const c = ctx()
+    const sessionId = await startSession(c, { gymId: 'gym-1', programDayId: 'day-push' })
+    const snapshots = await c.db.sessionExercises.where('sessionId').equals(sessionId).toArray()
+    const press = snapshots.find((se) => se.exerciseId === 'ex-flat-machine-press')!
+    expect(press.suggestion).toMatchObject({ isCalibration: true, loadLb: null })
+    for (const [loadLb, reps] of [
+      [80, 12],
+      [100, 9],
+      [110, 6],
+    ] as const) {
+      await logSet(c, { sessionExerciseId: press.id, loadLb, reps })
+    }
+    const before = await programSnapshot(c)
+    const e = await expectServiceError(
+      setTrackStart(c, 'day-push', 'ex-flat-machine-press', 'gym-1', {
+        startLoadLb: 100,
+        calibrate: false,
+      }),
+      'track_has_history',
+    )
+    expect(e.detail).toEqual({ reason: 'in_progress' })
+    expect(e.message).toMatch(/Flat machine press is in the session you're logging/)
+    // An exercise with no sets logged yet is held too, and so is a free-weight (shared) track.
+    await expectServiceError(
+      setTrackStart(c, 'day-push', 'ex-machine-fly', 'gym-1', {
+        startLoadLb: 150,
+        calibrate: true,
+      }),
+      'track_has_history',
+    )
+    await expectServiceError(
+      setTrackStart(c, 'day-push', 'ex-incline-db-bench', '*', {
+        startLoadLb: 60,
+        calibrate: false,
+      }),
+      'track_has_history',
+    )
+    expect(await programSnapshot(c)).toEqual(before)
+    // The same exercise at another gym or on another day isn't held.
+    const gym2 = await createGym(c, 'Hotel gym')
+    await setTrackStart(c, 'day-push', 'ex-flat-machine-press', gym2, {
+      startLoadLb: 100,
+      calibrate: false,
+    })
+    await setTrackStart(c, 'day-upper', 'ex-lateral-raise', 'gym-1', {
+      startLoadLb: 35,
+      calibrate: false,
+    })
+
+    await finishSession(c, sessionId)
+    // Calibration, as the snapshot said: the last working load is the base.
+    const result = (await loadTrainingModel(c)).sessionResults(sessionId).get(press.id)
+    expect(result).toMatchObject({ branch: 'calibration', evaluated: false })
+    expect(await prescribe(c, 'day-push', 'slot-push-2')).toMatchObject({
+      loadLb: 110,
+      isCalibration: false,
+    })
+  })
+
+  it('is allowed again once the session holding the track is abandoned', async () => {
+    const c = ctx()
+    const sessionId = await startSession(c, { gymId: 'gym-1', programDayId: 'day-lower-a' })
+    const start = { startLoadLb: 200, calibrate: false }
+    await expectServiceError(
+      setTrackStart(c, 'day-lower-a', 'ex-smith-squat', 'gym-1', start),
+      'track_has_history',
+    )
+    await abandonSession(c, sessionId)
+    await setTrackStart(c, 'day-lower-a', 'ex-smith-squat', 'gym-1', start)
+    expect(await prescribe(c, 'day-lower-a', 'slot-lower-a-1')).toMatchObject({ loadLb: 200 })
   })
 
   it('rejects the wrong scope, a bad load or unknown rows', async () => {

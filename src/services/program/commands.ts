@@ -14,6 +14,7 @@ import { resolveBand } from '@/domain/volume'
 import {
   SHARED_GYM_SCOPE,
   type Exercise,
+  type Gym,
   type GymScope,
   type LoadType,
   type Muscle,
@@ -22,12 +23,13 @@ import {
   type ProgramDay,
   type ProgramSlot,
   type Regime,
+  type TrackStartRow,
   type Weekday,
 } from '@/domain/types'
 import type { ServiceCtx } from '../context'
 import { ServiceError } from '../errors'
 import { loadSettings } from '../settings'
-import { loadTrainingModel } from '../training/model'
+import { lockedTracks, readExerciseSessionRows } from './tracks'
 
 /** Input bounds for the editor (the UI uses them for stepper limits). */
 export const PROGRAM_LIMITS = {
@@ -242,20 +244,45 @@ export async function archiveSlot(ctx: ServiceCtx, id: string): Promise<void> {
   })
 }
 
-export async function restoreSlot(ctx: ServiceCtx, id: string): Promise<void> {
+export interface RestoreSlotResult {
+  /** Gym overrides of the slot removed because their exercise was archived meanwhile. */
+  droppedOverrides: { gymId: string; exerciseId: string }[]
+}
+
+/**
+ * Bring an archived slot back. Refused while its default exercise is archived. Gym overrides that
+ * point at an exercise archived while the slot was (archiveExercise ignores archived slots) are
+ * removed, so those gyms fall back to the slot's default instead of an archived exercise.
+ */
+export async function restoreSlot(ctx: ServiceCtx, id: string): Promise<RestoreSlotResult> {
   const { db } = ctx
-  await db.transaction('rw', [db.programSlots, db.exercises], async () => {
-    const slot = await requireRow(db.programSlots.get(id), 'program slot', id)
-    if (slot.archivedAt === null) return
-    const exercise = await db.exercises.get(slot.defaultExerciseId)
-    if (exercise && exercise.archivedAt !== null) {
-      throw new ServiceError(
-        'exercise_archived',
-        `${exercise.name} is archived. Restore it, or restore the slot and pick another exercise.`,
-      )
-    }
-    await db.programSlots.update(id, { archivedAt: null })
-  })
+  return db.transaction(
+    'rw',
+    [db.programSlots, db.exercises, db.gymSlotOverrides],
+    async (): Promise<RestoreSlotResult> => {
+      const slot = await requireRow(db.programSlots.get(id), 'program slot', id)
+      if (slot.archivedAt === null) return { droppedOverrides: [] }
+      const exercises = await exerciseMap(ctx)
+      const exercise = exercises.get(slot.defaultExerciseId)
+      if (exercise && exercise.archivedAt !== null) {
+        throw new ServiceError(
+          'exercise_archived',
+          `${exercise.name} is archived. Restore it, or restore the slot and pick another exercise.`,
+        )
+      }
+      const dropped = (await db.gymSlotOverrides.where('slotId').equals(id).toArray())
+        .filter((o) => {
+          const e = exercises.get(o.exerciseId)
+          return !e || e.archivedAt !== null
+        })
+        .sort((a, b) => compareIds(a.gymId, b.gymId))
+      await db.gymSlotOverrides.bulkDelete(dropped.map((o) => o.id))
+      await db.programSlots.update(id, { archivedAt: null })
+      return {
+        droppedOverrides: dropped.map((o) => ({ gymId: o.gymId, exerciseId: o.exerciseId })),
+      }
+    },
+  )
 }
 
 // ── Exercises ────────────────────────────────────────────────────────────────
@@ -327,7 +354,9 @@ export type ExercisePatch = Partial<Omit<ExerciseInput, 'defaultRegime'>> & {
  * Edit a library exercise. Past sessions keep the name, load type and muscle weights they were
  * logged with. Changing the load type also moves `equipmentSpecific` / `perHand` to the new
  * type's defaults, unless the patch sets them or they had been set away from the old defaults.
- * Toggling `equipmentSpecific` regroups existing history into per-gym or shared tracks.
+ * Toggling `equipmentSpecific` regroups existing history into per-gym or shared tracks, and moves
+ * the exercise's track starts to the new scope in the same write (see rescopeTrackStarts), so
+ * start loads stay with their tracks and past results don't turn into calibration.
  */
 export async function updateExercise(
   ctx: ServiceCtx,
@@ -346,7 +375,7 @@ export async function updateExercise(
     isFinisher: optionalBool(patch.isFinisher, 'isFinisher'),
   }
   const { db } = ctx
-  await db.transaction('rw', [db.exercises, db.muscles], async () => {
+  await db.transaction('rw', [db.exercises, db.muscles, db.trackStarts, db.gyms], async () => {
     const current = await requireRow(db.exercises.get(id), 'exercise', id)
     if (name !== undefined) checkUniqueName(name, await db.exercises.toArray(), id, 'exercise')
     const next: Exercise = { ...current, updatedAt: ctx.now() }
@@ -374,7 +403,58 @@ export async function updateExercise(
     for (const [key, value] of Object.entries(flags) as [keyof typeof flags, boolean | undefined][])
       if (value !== undefined) next[key] = value
     await db.exercises.put(next)
+    if (next.equipmentSpecific !== current.equipmentSpecific) {
+      const { remove, put } = rescopeTrackStarts(
+        await db.trackStarts.where('exerciseId').equals(id).toArray(),
+        next.equipmentSpecific,
+        await db.gyms.toArray(),
+        ctx.now(),
+      )
+      await db.trackStarts.bulkDelete(remove)
+      await db.trackStarts.bulkPut(put)
+    }
   })
+}
+
+/**
+ * Move one exercise's track starts to a new gym scope (track keys include the scope, so rows of
+ * the old scope would no longer apply). Per gym → shared keeps one start per program day: the row
+ * of the first gym (by gym order) that has one. Shared → per gym copies each day's shared start to
+ * every active gym. Rows already in the new scope are kept unless a moved start replaces them.
+ */
+export function rescopeTrackStarts(
+  rows: readonly TrackStartRow[],
+  equipmentSpecific: boolean,
+  gyms: readonly Gym[],
+  now: number,
+): { remove: string[]; put: TrackStartRow[] } {
+  const isShared = (r: TrackStartRow) => r.gymScope === SHARED_GYM_SCOPE
+  const moved = rows.filter((r) => (equipmentSpecific ? isShared(r) : !isShared(r)))
+  const sortedGyms = [...gyms].sort((a, b) => a.sortOrder - b.sortOrder || compareIds(a.id, b.id))
+  const gymRank = new Map(sortedGyms.map((g, i) => [g.id, i]))
+  const rank = (r: TrackStartRow) => gymRank.get(r.gymScope) ?? Number.MAX_SAFE_INTEGER
+  const scopes = equipmentSpecific
+    ? sortedGyms.filter((g) => g.archivedAt === null).map((g) => g.id)
+    : [SHARED_GYM_SCOPE]
+  const before = (a: TrackStartRow, b: TrackStartRow) =>
+    (rank(a) - rank(b) || compareIds(a.trackKey, b.trackKey)) < 0
+  const sourceByDay = new Map<string, TrackStartRow>()
+  for (const r of moved) {
+    const best = sourceByDay.get(r.programDayId)
+    if (!best || before(r, best)) sourceByDay.set(r.programDayId, r)
+  }
+  const put = [...sourceByDay.values()].flatMap((source) =>
+    scopes.map((scope): TrackStartRow => ({
+      trackKey: trackKey(source.programDayId, source.exerciseId, scope),
+      programDayId: source.programDayId,
+      exerciseId: source.exerciseId,
+      gymScope: scope,
+      startLoadLb: source.startLoadLb,
+      calibrate: source.calibrate,
+      updatedAt: now,
+    })),
+  )
+  return { remove: moved.map((r) => r.trackKey), put }
 }
 
 /**
@@ -554,10 +634,11 @@ export interface TrackStartInput {
 
 /**
  * Where a progression track starts before it has history. `scope` is the gym id for
- * equipment-specific exercises and '*' otherwise (see progression/keys.ts). Refused once the
- * track has logged working sets: replay reads the start (its calibrate flag decides how the first
- * session is scored), so changing it then would rewrite past results; the next load comes from
- * history instead.
+ * equipment-specific exercises and '*' otherwise (see progression/keys.ts). Refused
+ * ('track_has_history', detail.reason 'history' or 'in_progress') once the track has logged
+ * working sets, and while the session being logged includes it (see tracks.ts): replay reads the
+ * start (its calibrate flag decides how the first session is scored), so changing it then would
+ * rescore that session. The next load comes from history instead.
  */
 export async function setTrackStart(
   ctx: ServiceCtx,
@@ -571,12 +652,17 @@ export async function setTrackStart(
     throw new ServiceError('invalid_load', 'The start load must be a number, or blank.')
   }
   const calibrate = optionalBool(input.calibrate, 'calibrate') ?? false
-  const model = await loadTrainingModel(ctx)
-  const hasHistory = model
-    .trackHistory(dayId, exerciseId, scope)
-    .some((session) => session.sets.length > 0)
   const { db } = ctx
-  await db.transaction('rw', [db.programDays, db.exercises, db.gyms, db.trackStarts], async () => {
+  const tables = [
+    db.programDays,
+    db.exercises,
+    db.gyms,
+    db.trackStarts,
+    db.sessions,
+    db.sessionExercises,
+    db.setLogs,
+  ]
+  await db.transaction('rw', tables, async () => {
     await requireRow(db.programDays.get(dayId), 'program day', dayId)
     const exercise = await requireRow(db.exercises.get(exerciseId), 'exercise', exerciseId)
     if (startLoadLb !== null && startLoadLb < 0 && exercise.loadType !== 'bodyweight_plus') {
@@ -599,15 +685,27 @@ export async function setTrackStart(
         `${exercise.name} is shared across gyms, so its start load isn't per gym.`,
       )
     }
-    if (hasHistory) {
+    const key = trackKey(dayId, exerciseId, scope)
+    const lock = lockedTracks(exercise, await readExerciseSessionRows(db, exerciseId)).get(key)
+    if (lock === 'history') {
       throw new ServiceError(
         'track_has_history',
         `${exercise.name} already has logged sessions on this day, so its next load comes ` +
           'from them. Change the load in the next session instead.',
+        { reason: lock },
+      )
+    }
+    if (lock === 'in_progress') {
+      throw new ServiceError(
+        'track_has_history',
+        `${exercise.name} is in the session you're logging, which was set up from its current ` +
+          "start, so the start can't change now. Log the load you lift; the next session " +
+          'follows from it.',
+        { reason: lock },
       )
     }
     await db.trackStarts.put({
-      trackKey: trackKey(dayId, exerciseId, scope),
+      trackKey: key,
       programDayId: dayId,
       exerciseId,
       gymScope: scope,
@@ -891,7 +989,11 @@ function nextOrder(rows: readonly { order: number }[]): number {
 }
 
 function byOrder<T extends { id: string; order: number }>(rows: T[]): T[] {
-  return rows.sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  return rows.sort((a, b) => a.order - b.order || compareIds(a.id, b.id))
+}
+
+function compareIds(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
 }
 
 /** The rows in their new order: the listed ids first, then unlisted archived rows. */

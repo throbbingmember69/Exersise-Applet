@@ -11,22 +11,31 @@ import {
   type VolumeBand,
   type VolumeFlag,
 } from '@/domain/volume'
-import type {
-  EpochMs,
-  Exercise,
-  Gym,
-  GymScope,
-  LoadType,
-  LocalDate,
-  Muscle,
-  MuscleId,
-  MuscleWeight,
-  ProgramDay,
-  ProgramSlot,
-  Settings,
+import { trackKey } from '@/domain/progression/keys'
+import {
+  SHARED_GYM_SCOPE,
+  type EpochMs,
+  type Exercise,
+  type Gym,
+  type GymScope,
+  type LoadType,
+  type LocalDate,
+  type Muscle,
+  type MuscleId,
+  type MuscleWeight,
+  type ProgramDay,
+  type ProgramSlot,
+  type Settings,
+  type TrackStartRow,
 } from '@/domain/types'
 import type { ServiceCtx } from '../context'
 import { loadSettings } from '../settings'
+import {
+  lockedTracks,
+  readExerciseSessionRows,
+  sessionsWithWorkingSets,
+  type TrackLock,
+} from './tracks'
 
 type ReadCtx = Pick<ServiceCtx, 'db'>
 
@@ -220,17 +229,28 @@ export interface TrackStartView {
   scope: GymScope
   /** The gym of a per-gym track (null for shared tracks). */
   gymName: string | null
+  /** A track with no stored start (null updatedAt) starts blank, with calibration. */
   startLoadLb: number | null
   calibrate: boolean
-  updatedAt: EpochMs
+  /** When the start was saved; null when none is stored (the track uses the default). */
+  updatedAt: EpochMs | null
+  /** setTrackStart would accept a new start (false exactly when `lockedBy` is set). */
+  editable: boolean
+  /** Why the start is locked: logged history, or the session being logged includes it. */
+  lockedBy: TrackLock | null
 }
 
 export interface ExerciseDetail extends LibraryExercise {
   /** Per-gym steps that override `exercise.stepLb`. */
   gymSteps: GymStepView[]
-  /** Start loads of this exercise's progression tracks, in program-day order. */
+  /**
+   * This exercise's progression tracks, in program-day then gym order: every (day, scope) the live
+   * program implies (days where an active slot has it as default, alternate or a gym's override;
+   * per active gym for equipment-specific exercises, else shared), plus any other stored start of
+   * the current scope. Stored starts of the other scope don't apply and aren't listed.
+   */
   trackStarts: TrackStartView[]
-  /** Finished, non-voided sessions that included it. */
+  /** Finished, non-voided sessions with at least one working set of it (skipped ones don't count). */
   loggedSessionCount: number
   lastLoggedOn: LocalDate | null
 }
@@ -242,48 +262,101 @@ export async function getExerciseDetail(ctx: ReadCtx, id: string): Promise<Exerc
   if (!exercise) return null
   const extra = await db.transaction(
     'r',
-    [db.gymExerciseSettings, db.trackStarts, db.sessionExercises, db.sessions],
-    async () => {
-      const sessionExercises = await db.sessionExercises.where('exerciseId').equals(id).toArray()
-      const sessionIds = [...new Set(sessionExercises.map((se) => se.sessionId))]
-      return {
-        gymSettings: await db.gymExerciseSettings.toArray(),
-        trackStarts: await db.trackStarts.where('exerciseId').equals(id).toArray(),
-        sessions: (await db.sessions.bulkGet(sessionIds)).filter((s) => s !== undefined),
-      }
-    },
+    [db.gymExerciseSettings, db.trackStarts, db.sessionExercises, db.sessions, db.setLogs],
+    async () => ({
+      gymSettings: await db.gymExerciseSettings.toArray(),
+      trackStarts: await db.trackStarts.where('exerciseId').equals(id).toArray(),
+      sessionRows: await readExerciseSessionRows(db, id),
+    }),
   )
   const gymName = new Map(data.gyms.map((g) => [g.id, g.name]))
-  const days = new Map(data.days.map((d) => [d.id, d]))
-  const counted = extra.sessions.filter((s) => s.status === 'finished' && s.voidedAt === null)
+  const logged = sessionsWithWorkingSets(extra.sessionRows)
   return {
     ...libraryItem(exercise, data),
     gymSteps: extra.gymSettings
       .filter((g) => g.exerciseId === id && g.stepLb !== null)
       .map((g) => ({ gymId: g.gymId, gymName: gymName.get(g.gymId) ?? g.gymId, stepLb: g.stepLb! }))
       .sort((a, b) => a.gymName.localeCompare(b.gymName) || compareIds(a.gymId, b.gymId)),
-    trackStarts: extra.trackStarts
-      .map((t): TrackStartView => ({
-        trackKey: t.trackKey,
-        dayId: t.programDayId,
-        dayName: days.get(t.programDayId)?.name ?? t.programDayId,
-        scope: t.gymScope,
-        gymName: gymName.get(t.gymScope) ?? null,
-        startLoadLb: t.startLoadLb,
-        calibrate: t.calibrate,
-        updatedAt: t.updatedAt,
-      }))
-      .sort(
-        (a, b) =>
-          (days.get(a.dayId)?.order ?? Infinity) - (days.get(b.dayId)?.order ?? Infinity) ||
-          compareIds(a.trackKey, b.trackKey),
-      ),
-    loggedSessionCount: counted.length,
-    lastLoggedOn: counted.reduce<LocalDate | null>(
+    trackStarts: trackStartViews(
+      exercise,
+      data,
+      extra.trackStarts,
+      lockedTracks(exercise, extra.sessionRows),
+    ),
+    loggedSessionCount: logged.length,
+    lastLoggedOn: logged.reduce<LocalDate | null>(
       (max, s) => (max === null || s.date > max ? s.date : max),
       null,
     ),
   }
+}
+
+/** See ExerciseDetail.trackStarts. */
+function trackStartViews(
+  exercise: Exercise,
+  data: LibraryData,
+  rows: readonly TrackStartRow[],
+  locks: ReadonlyMap<string, TrackLock>,
+): TrackStartView[] {
+  const days = new Map(data.days.map((d) => [d.id, d]))
+  const gyms = new Map(data.gyms.map((g) => [g.id, g]))
+  const liveDayIds = new Set(data.days.filter((d) => d.archivedAt === null).map((d) => d.id))
+  const overriddenSlots = new Set(
+    data.overrides.filter((o) => o.exerciseId === exercise.id).map((o) => o.slotId),
+  )
+  const implied = new Set(
+    data.slots
+      .filter(
+        (s) =>
+          s.archivedAt === null &&
+          liveDayIds.has(s.programDayId) &&
+          (s.defaultExerciseId === exercise.id ||
+            s.alternateExerciseIds.includes(exercise.id) ||
+            overriddenSlots.has(s.id)),
+      )
+      .map((s) => s.programDayId),
+  )
+  const scopes: GymScope[] = exercise.equipmentSpecific
+    ? data.gyms.filter((g) => g.archivedAt === null).map((g) => g.id)
+    : [SHARED_GYM_SCOPE]
+  const tracks = new Map<string, { dayId: string; scope: GymScope; row: TrackStartRow | null }>()
+  for (const dayId of implied) {
+    for (const scope of scopes) {
+      tracks.set(trackKey(dayId, exercise.id, scope), { dayId, scope, row: null })
+    }
+  }
+  for (const row of rows) {
+    const inScope = exercise.equipmentSpecific
+      ? gyms.has(row.gymScope)
+      : row.gymScope === SHARED_GYM_SCOPE
+    if (inScope) tracks.set(row.trackKey, { dayId: row.programDayId, scope: row.gymScope, row })
+  }
+  const dayOrder = (dayId: string) => days.get(dayId)?.order ?? Number.MAX_SAFE_INTEGER
+  const gymOrder = (scope: GymScope) =>
+    scope === SHARED_GYM_SCOPE ? -1 : (gyms.get(scope)?.sortOrder ?? Number.MAX_SAFE_INTEGER)
+  return [...tracks]
+    .map(([key, { dayId, scope, row }]): TrackStartView => {
+      const lockedBy = locks.get(key) ?? null
+      return {
+        trackKey: key,
+        dayId,
+        dayName: days.get(dayId)?.name ?? dayId,
+        scope,
+        gymName: gyms.get(scope)?.name ?? null,
+        startLoadLb: row ? row.startLoadLb : null,
+        calibrate: row ? row.calibrate : true,
+        updatedAt: row ? row.updatedAt : null,
+        editable: lockedBy === null,
+        lockedBy,
+      }
+    })
+    .sort(
+      (a, b) =>
+        dayOrder(a.dayId) - dayOrder(b.dayId) ||
+        compareIds(a.dayId, b.dayId) ||
+        gymOrder(a.scope) - gymOrder(b.scope) ||
+        compareIds(a.trackKey, b.trackKey),
+    )
 }
 
 export interface GymOverrideView {
