@@ -1,15 +1,35 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import App from './App'
+import ServicesProvider from './app/ServicesProvider'
+import ToastProvider from './app/ToastProvider'
+import { disposeCtx, type TestCtx } from './app/testing'
+import { createTestCtx } from './services/context'
+
+let ctx: TestCtx
+
+function renderApp() {
+  return render(
+    <ServicesProvider ctx={ctx}>
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    </ServicesProvider>,
+  )
+}
 
 describe('App shell', () => {
   beforeEach(() => {
     window.location.hash = '#/'
+    ctx = createTestCtx()
+  })
+  afterEach(async () => {
+    await disposeCtx(ctx)
   })
 
   it('renders Today with the bottom navigation', async () => {
-    render(<App />)
+    renderApp()
     expect(await screen.findByRole('heading', { name: 'Today' })).toBeInTheDocument()
     const nav = screen.getByRole('navigation', { name: 'Main' })
     for (const tab of ['Today', 'Train', 'Body', 'Food', 'More']) {
@@ -18,7 +38,7 @@ describe('App shell', () => {
   })
 
   it('navigates between tabs with hash routing', async () => {
-    render(<App />)
+    renderApp()
     await screen.findByRole('heading', { name: 'Today' })
     await userEvent.click(screen.getByRole('link', { name: 'Train' }))
     expect(await screen.findByRole('heading', { name: 'Train' })).toBeInTheDocument()
