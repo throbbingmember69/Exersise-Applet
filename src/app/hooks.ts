@@ -61,7 +61,14 @@ export function useUnits(): UnitSystem {
 export function useCommand<A extends unknown[], R>(
   command: (ctx: ServiceCtx, ...args: A) => Promise<R>,
   opts: { success?: string } = {},
-): { run: (...args: A) => Promise<R | undefined>; pending: boolean; error: string | null } {
+): {
+  /** Resolves to the command's result, or undefined when it failed (already toasted). */
+  run: (...args: A) => Promise<R | undefined>
+  /** Resolves to whether the command succeeded (for commands that return nothing). */
+  tryRun: (...args: A) => Promise<boolean>
+  pending: boolean
+  error: string | null
+} {
   const ctx = useCtx()
   const toast = useToast()
   const [pending, setPending] = useState(false)
@@ -73,26 +80,34 @@ export function useCommand<A extends unknown[], R>(
   })
   const success = opts.success
 
-  const run = useCallback(
-    async (...args: A) => {
+  const exec = useCallback(
+    async (...args: A): Promise<{ ok: true; value: R } | { ok: false }> => {
       setPending(true)
       setError(null)
       try {
-        const result = await commandRef.current(ctx, ...args)
+        const value = await commandRef.current(ctx, ...args)
         if (success) toast.show(success, { tone: 'good' })
-        return result
+        return { ok: true, value }
       } catch (e) {
         const message = isServiceError(e) ? e.message : 'Something went wrong. Please try again.'
         if (!isServiceError(e)) console.error(e)
         setError(message)
         toast.show(message, { tone: 'bad' })
-        return undefined
+        return { ok: false }
       } finally {
         setPending(false)
       }
     },
     [ctx, toast, success],
   )
+  const run = useCallback(
+    async (...args: A) => {
+      const r = await exec(...args)
+      return r.ok ? r.value : undefined
+    },
+    [exec],
+  )
+  const tryRun = useCallback(async (...args: A) => (await exec(...args)).ok, [exec])
 
-  return { run, pending, error }
+  return { run, tryRun, pending, error }
 }
