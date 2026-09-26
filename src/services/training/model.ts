@@ -7,6 +7,7 @@
 // scope) and is replayed for load suggestions; a strength SERIES is (exercise, gym scope), pooled
 // across program days, for e1RM charts, stalls and the cut's strength check. The gym scope uses
 // the exercise's CURRENT equipmentSpecific flag, so toggling it regroups history.
+import { compareLocalDate } from '@/domain/dates'
 import { deloadStatus, deloadTrigger, type DeloadStatus, type DeloadTrigger } from '@/domain/deload'
 import { metricKind, type MetricKind } from '@/domain/e1rm'
 import { replayTrack, toWorkingSets, type Replay } from '@/domain/progression/evaluate'
@@ -37,6 +38,7 @@ import type {
   TrackSession,
   TrackStart,
   TrackStartRow,
+  TrackState,
 } from '@/domain/types'
 import type { ServiceCtx } from '../context'
 import { loadSettings } from '../settings'
@@ -133,6 +135,8 @@ export class TrainingModel {
   private readonly overrides = new Map<string, string>()
   private readonly gymSteps = new Map<string, number>()
   private readonly trackStarts: Map<string, TrackStartRow>
+  /** Exercises that fill an active slot of an active day: default, alternate or gym override. */
+  private readonly slotExerciseIds = new Set<string>()
   /** Counted sessions, oldest first. */
   private readonly counted: Session[]
   private readonly exercisesBySession = new Map<string, SessionExercise[]>()
@@ -152,6 +156,19 @@ export class TrainingModel {
     for (const list of this.slotsByDay.values()) list.sort((a, b) => a.order - b.order)
     for (const o of data.gymSlotOverrides)
       this.overrides.set(`${o.gymId}|${o.slotId}`, o.exerciseId)
+    const activeDays = new Set(
+      data.programDays.filter((d) => d.archivedAt === null).map((d) => d.id),
+    )
+    const activeSlots = new Set<string>()
+    for (const slot of data.programSlots) {
+      if (slot.archivedAt !== null || !activeDays.has(slot.programDayId)) continue
+      activeSlots.add(slot.id)
+      this.slotExerciseIds.add(slot.defaultExerciseId)
+      for (const id of slot.alternateExerciseIds) this.slotExerciseIds.add(id)
+    }
+    for (const o of data.gymSlotOverrides) {
+      if (activeSlots.has(o.slotId)) this.slotExerciseIds.add(o.exerciseId)
+    }
     for (const g of data.gymExerciseSettings) {
       if (g.stepLb !== null) this.gymSteps.set(`${g.gymId}|${g.exerciseId}`, g.stepLb)
     }
@@ -259,11 +276,31 @@ export class TrainingModel {
 
   /** What to pre-fill next time this exercise is done in this program day at this gym. */
   prescriptionFor(req: PrescriptionRequest): NextPrescription {
+    const scope = this.scopeFor(req.exerciseId, req.gymId)
+    return this.prescribe(req, this.replay(req.programDayId, req.exerciseId, scope).state)
+  }
+
+  /**
+   * The suggestion that followed a session of a track: the track's history replayed up to and
+   * including `after` (in (date, startedAt) order), so later sessions don't change it.
+   */
+  prescriptionAfter(
+    req: PrescriptionRequest,
+    after: Pick<Session, 'date' | 'startedAt'>,
+  ): NextPrescription {
+    const scope = this.scopeFor(req.exerciseId, req.gymId)
+    const history = this.trackHistory(req.programDayId, req.exerciseId, scope).filter(
+      (h) => (compareLocalDate(h.date, after.date) || h.startedAt - after.startedAt) <= 0,
+    )
+    const start = this.trackStartFor(req.programDayId, req.exerciseId, scope)
+    return this.prescribe(req, replayTrack(start, history, this.settings).state)
+  }
+
+  private prescribe(req: PrescriptionRequest, state: TrackState): NextPrescription {
     const exercise = this.requireExercise(req.exerciseId)
     const scope = this.scopeFor(exercise.id, req.gymId)
     const step = this.stepFor(exercise.id, req.gymId)
     const start = this.trackStartFor(req.programDayId, exercise.id, scope)
-    const { state } = this.replay(req.programDayId, exercise.id, scope)
     const next = nextPrescription(state, start, req.regime, step, exercise.loadType, this.settings)
     return req.isDeload
       ? deloadPrescription(next, req.regime, step, exercise.loadType, this.settings)
@@ -338,11 +375,17 @@ export class TrainingModel {
     )
   }
 
-  /** Stall check for every non-finisher exercise with history, per gym scope. */
+  /**
+   * Stall check per gym scope for every exercise with history that is still part of the program:
+   * not archived, not a finisher, and filling an active slot (as its default, an alternate or a
+   * gym override). A retired lift's stall would otherwise never clear, and it would keep feeding
+   * the deload trigger.
+   */
   stallFlags(): StallFlag[] {
     const out: StallFlag[] = []
     for (const exercise of this.exercises.values()) {
-      if (exercise.isFinisher) continue
+      if (exercise.isFinisher || exercise.archivedAt !== null) continue
+      if (!this.slotExerciseIds.has(exercise.id)) continue
       for (const scope of this.scopesWithHistory(exercise.id)) {
         out.push({
           exerciseId: exercise.id,

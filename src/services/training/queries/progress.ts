@@ -7,7 +7,14 @@ import type { MetricPoint } from '@/domain/stall'
 import type { GymScope, LoadType, LocalDate } from '@/domain/types'
 import type { ServiceCtx } from '../../context'
 import type { StallFlag, TrainingModel } from '../model'
-import { compareScopes, loadQueryData, modelAsOf, scopeGymName, type QueryData } from './shared'
+import {
+  compareScopes,
+  loadQueryData,
+  modelAsOf,
+  queryDate,
+  scopeGymName,
+  type QueryData,
+} from './shared'
 
 /** "Change vs 4 weeks ago" compares the latest point with the latest one at least this old. */
 export const PROGRESS_CHANGE_LOOKBACK_DAYS = 28
@@ -59,12 +66,15 @@ export interface ProgressOverviewItem {
 
 /**
  * Every exercise series with at least one point on or before `asOf`, stalled first, then main
- * lifts, then by name.
+ * lifts, then by name. "Change vs 4 weeks ago" compares the latest point with the latest earlier
+ * point at least 4 weeks before `asOf` (null when there is none). Throws ServiceError
+ * 'invalid_date' for a bad date.
  */
 export async function getProgressOverview(
   ctx: Pick<ServiceCtx, 'db'>,
-  { asOf }: { asOf: LocalDate },
+  { asOf: asOfInput }: { asOf: LocalDate },
 ): Promise<ProgressOverviewItem[]> {
+  const asOf = queryDate(asOfInput, 'As-of date')
   const q = await loadQueryData(ctx)
   const model = modelAsOf(q.data, asOf)
   const stalls = stallsByKey(model)
@@ -76,7 +86,11 @@ export async function getProgressOverview(
       const points = model.series(exercise.id, scope)
       const latest = points[points.length - 1]
       if (!latest) continue
-      const reference = points.filter((p) => compareLocalDate(p.date, lookback) <= 0).pop()
+      // Strictly before the latest point: a point is never compared with itself.
+      const reference = points
+        .slice(0, -1)
+        .filter((p) => compareLocalDate(p.date, lookback) <= 0)
+        .pop()
       items.push({
         exerciseId: exercise.id,
         name: exercise.name,

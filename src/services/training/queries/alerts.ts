@@ -6,35 +6,39 @@ import {
   deloadView,
   loadQueryData,
   modelAsOf,
-  stallView,
+  openStallViews,
+  queryDate,
   type DeloadView,
   type StallView,
 } from './shared'
 
 export interface TrainingAlerts {
   inProgressSessionId: string | null
-  /** Stalled series as of `asOf`, oldest stall first. */
+  /**
+   * Stalled series as of `asOf` that weren't answered in the suggestion log, oldest stall first.
+   * Only exercises still in the program are checked (TrainingModel.stallFlags).
+   */
   stalls: StallView[]
   deload: DeloadView
 }
 
-/** Alerts from history up to `asOf` (the session to resume is whatever is in progress now). */
+/**
+ * Alerts from history up to `asOf`, including the suggestion log as it stood then (the session to
+ * resume is whatever is in progress now). Throws ServiceError 'invalid_date' for a bad date.
+ */
 export async function getTrainingAlerts(
   ctx: Pick<ServiceCtx, 'db'>,
-  { asOf }: { asOf: LocalDate },
+  { asOf: asOfInput }: { asOf: LocalDate },
 ): Promise<TrainingAlerts> {
+  const asOf = queryDate(asOfInput, 'As-of date')
   const q = await loadQueryData(ctx)
   const model = modelAsOf(q.data, asOf)
-  const stalls = model
-    .stallFlags()
-    .filter((f) => f.result.stalled)
-    .map((f) => stallView(q, model, f))
-    .sort(
-      (a, b) =>
-        (a.since ?? '').localeCompare(b.since ?? '') ||
-        a.name.localeCompare(b.name) ||
-        compareScopes(q.gyms, a.scope, b.scope),
-    )
+  const stalls = openStallViews(q, model).sort(
+    (a, b) =>
+      (a.since ?? '').localeCompare(b.since ?? '') ||
+      a.name.localeCompare(b.name) ||
+      compareScopes(q.gyms, a.scope, b.scope),
+  )
   return {
     inProgressSessionId: q.model.inProgressSession()?.id ?? null,
     stalls,

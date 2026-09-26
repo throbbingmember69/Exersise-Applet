@@ -16,6 +16,15 @@
 >   - ΔT runs from the trend at the close of the day before the window to the trend on its last day, so normally D = L (the window length).
 >   - Only real trend points are used. If the trend starts inside the window, or the last days have no weigh-in, ΔT covers fewer days and D is the days it actually spans.
 >   - Window choice, logging thresholds, the disruption exclusion and the week-over-week cap follow finding #30 and finding #29 (see `src/domain/tdee.ts`).
+> - **Training services after the M2 review:**
+>   - A session holds each exercise once: swapping or adding an exercise already in it fails with `exercise_in_session`.
+>   - `StartOptions.bodyweight` is the value `startSession` stores (same-day weigh-in → trend → seed → null); pass `bodyweightLb` only when the user edits it. `setSessionBodyweight` fixes it during a session. Bodyweight-plus rows get a `no_bodyweight` notice when it's missing.
+>   - Voided sets of an in-progress row that is swapped or removed are deleted with it. This is the one exception to soft deletes: they're scratch data, not history.
+>   - Ad hoc sessions are never deload sessions, but ad hoc rows inside a deload session get the deload cut.
+>   - `getVolumeDashboard(ctx, { weekOf, today, gymId? })`: the week is complete only after its last day, and sessions dated after `today` don't count.
+>   - The summary's `next` is what followed that session (`superseded: true` if the track has moved on).
+>   - Stall cards carry `key`/`status` for the suggestion log, and dismissed ones are hidden. Stalls count only exercises still in an active slot.
+>   - Session detail lists `voidedSets` for Edit-mode restore.
 
 # Implementation plan: Exersise Applet (offline-first Android PWA)
 

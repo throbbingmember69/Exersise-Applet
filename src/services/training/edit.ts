@@ -99,7 +99,8 @@ export async function restoreSet(ctx: ServiceCtx, setId: string): Promise<void> 
 
 /**
  * Change a finished or abandoned session's note, joint-pain flag, deload flag, bodyweight or
- * status (finished ↔ abandoned). An edited bodyweight becomes a manual one.
+ * status (finished ↔ abandoned). A changed bodyweight becomes a manual one; resubmitting the
+ * stored value (an edit form sends every field) keeps its weigh-in/trend/seed source.
  */
 export async function editSession(
   ctx: ServiceCtx,
@@ -111,12 +112,16 @@ export async function editSession(
   const { db } = ctx
   const now = ctx.now()
   await db.transaction('rw', db.sessions, async () => {
-    assertCanEdit(requireSession(await db.sessions.get(sessionId), sessionId))
-    await db.sessions.update(sessionId, {
-      ...p,
-      ...(p.bodyweightLb !== undefined && { bodyweightSource: 'manual' as const }),
-      editedAt: now,
-    })
+    const session = requireSession(await db.sessions.get(sessionId), sessionId)
+    assertCanEdit(session)
+    const { bodyweightLb, ...rest } = p
+    const bodyweightChanged = bodyweightLb !== undefined && bodyweightLb !== session.bodyweightLb
+    const changes: Partial<Session> = {
+      ...rest,
+      ...(bodyweightChanged && { bodyweightLb, bodyweightSource: 'manual' as const }),
+    }
+    if (Object.keys(changes).length === 0) return
+    await db.sessions.update(sessionId, { ...changes, editedAt: now })
   })
 }
 

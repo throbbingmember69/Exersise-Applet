@@ -61,7 +61,11 @@ describe('getTrainingAlerts', () => {
     const c = pool.make()
     await threeStalls(c)
     const alerts = await getTrainingAlerts(c, { asOf: d('2026-10-01') })
-    expect(alerts.stalls).toEqual([
+    for (const stall of alerts.stalls) {
+      expect(stall.key.startsWith(`stall;${stall.exerciseId}|${stall.scope};since=`)).toBe(true)
+      expect(stall.status).toBeNull()
+    }
+    expect(alerts.stalls).toMatchObject([
       {
         exerciseId: 'ex-smith-squat',
         name: 'Smith machine squat',

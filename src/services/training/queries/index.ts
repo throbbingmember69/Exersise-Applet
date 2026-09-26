@@ -33,9 +33,11 @@ export {
   type SetView,
   type SummaryExerciseView,
 } from './session'
+export type { SessionBodyweight } from '../bodyweight'
 export {
   AD_HOC_DAY_NAME,
   LAST_GYM_KEY,
+  stallKey,
   type BestSet,
   type DeloadView,
   type MuscleSets,
