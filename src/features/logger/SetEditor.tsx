@@ -30,7 +30,8 @@ export default function SetEditor({
   unit: UnitSystem
   stepLb: number
   onSave: (patch: SetPatchInput) => void
-  onDelete: () => void
+  /** Omit to hide the delete button (adding a new set). */
+  onDelete?: () => void
   onClose: () => void
 }) {
   return (
@@ -63,7 +64,7 @@ function SetEditorForm({
   unit: UnitSystem
   stepLb: number
   onSave: (patch: SetPatchInput) => void
-  onDelete: () => void
+  onDelete?: () => void
 }) {
   const [loadLb, setLoadLb] = useState<number | null>(set.loadLb)
   const [reps, setReps] = useState<number | null>(set.reps)
@@ -89,9 +90,11 @@ function SetEditorForm({
       </Field>
       <Toggle label="Warm-up set" checked={isWarmup} onChange={setWarmup} />
       <div className={kit.actions}>
-        <Button variant="danger" onClick={onDelete}>
-          Delete set
-        </Button>
+        {onDelete ? (
+          <Button variant="danger" onClick={onDelete}>
+            Delete set
+          </Button>
+        ) : null}
         <Button
           variant="primary"
           disabled={loadLb === null || reps === null}
