@@ -139,6 +139,15 @@ export default function Food() {
 
         {phase.phase ? <IntakeCard date={today} entry={food.intake} /> : null}
 
+        <LinkList>
+          <LinkRow
+            to="/settings/data"
+            icon="upload"
+            label="Import from Cronometer"
+            hint="Fill in days from a Cronometer CSV export"
+          />
+        </LinkList>
+
         {history && history.length > 0 ? (
           <Card title="Phases">
             <ul className={kit.linkList} style={{ border: 0 }}>

@@ -33,6 +33,7 @@
 >   - **Prompts:** a dismissed prompt stays dismissed only while it is unchanged.
 >   - **Proposals:** `proposePhase` accepts an edited `rateMinPct`/`rateMaxPct`/`targetRatePct`.
 >   - **Intake:** kcal above 15,000 is refused (`implausible_kcal`).
+> - **CSV imports (after M3):** `domain/csvRead.ts` holds the shared reading (delimiter, quotes, BOM, number cells, date order). `domain/scaleCsv.ts` and `domain/cronometerCsv.ts` match headers on top of it. `services/nutrition/scaleImport.ts` and `cronometerImport.ts` preview per day, then write in one transaction; imported values replace typed ones (`replaceExisting` defaults to true for the scale).
 > - **Data and program services after the M2 review:**
 >   - **Track start loads:** `setTrackStart` is refused while a session in progress holds the track (`track_has_history`). Changing an exercise's `equipmentSpecific` (directly or through its load type) re-keys its track starts: per-gym → shared keeps one per day; shared → per-gym copies to every active gym.
 >   - **Export:** `exportBackup` checks its own output and throws `export_invalid` rather than write an unrestorable file.

@@ -19,6 +19,7 @@ Things only a real phone can confirm. Open **https://throbbingmember69.github.io
 - [ ] More → Data & backup → **Save backup file** → share to Drive (or Files) and check the file is there.
 - [ ] **Export CSV** → Workout sets → opens in Sheets.
 - [ ] Arboleaf app → History → clock icon → Export → save the CSV. Then Data & backup → **Import from your smart scale** → pick the file → check the preview (columns, dates, units) → Import.
+- [ ] Cronometer website → export **Daily Nutrition** as CSV. Then Food → **Import from Cronometer** → pick the file → check that it found calories, protein, carbs and fat and that the days look right → Import.
 
 ## Results
 Record the date, phone model and anything that didn't work here.

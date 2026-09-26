@@ -1,6 +1,7 @@
 // Import a smart-scale CSV export (e.g. the Arboleaf app's) into the body log: one reading per day
-// (the earliest), weights and scale fields. The preview shows exactly what will happen per day
-// before anything is written; the import is one transaction.
+// (the earliest), weights and scale fields. Imported data wins by default: a day in the file
+// replaces what was typed for it (the user's decision). The preview shows exactly what will
+// happen per day before anything is written; the import is one transaction.
 import { compareLocalDate } from '@/domain/dates'
 import {
   parseScaleCsv,
@@ -35,8 +36,9 @@ const KEYS = [
 /**
  * What importing does with a day:
  * new: no entry yet; update: fills or replaces an entry (always for the seed baseline, and for
- * logged days when replacing); same: already logged with these values; exists: logged
- * differently, kept (not replacing); future: dated after today; invalid: nothing plausible.
+ * logged days unless keeping them); same: already logged with these values; exists: logged
+ * differently, kept (replaceExisting: false); future: dated after today; invalid: nothing
+ * plausible.
  */
 export type ImportDayStatus = 'new' | 'update' | 'same' | 'exists' | 'future' | 'invalid'
 
@@ -68,7 +70,7 @@ export interface ScaleImportInput {
   text: string
   /** Override the detected mass unit (the preview's unit picker). */
   massUnit?: MassUnit
-  /** Replace values on days that already have a (different) entry. */
+  /** Replace values on days that already have a (different) entry. Default true: imported wins. */
   replaceExisting?: boolean
 }
 
@@ -137,7 +139,7 @@ function plan(
     else if (!existing) status = 'new'
     else if (existing.source === 'seed') status = 'update'
     else if (existing.voidedAt === null && sameAs(existing, values)) status = 'same'
-    else status = opts.replaceExisting ? 'update' : 'exists'
+    else status = (opts.replaceExisting ?? true) ? 'update' : 'exists'
     counts[status]++
     return {
       reading,
@@ -184,7 +186,7 @@ export interface ScaleImportResult {
 
 /**
  * Import the readings: new days are added, the seed baseline's day is filled in, and logged days
- * are replaced only with `replaceExisting` (a deleted day is then restored). Imported weigh-ins
+ * are replaced (a deleted day is restored) unless `replaceExisting` is false. Imported weigh-ins
  * are user entries, like typed ones. Refuses a file whose mass unit is unknown.
  */
 export async function importScaleReadings(

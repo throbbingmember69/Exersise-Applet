@@ -56,16 +56,16 @@ describe('previewScaleImport', () => {
     expect(await c.db.bodyEntries.count()).toBe(1) // preview writes nothing
   })
 
-  it('marks days already logged: same values vs different (kept unless replacing)', async () => {
+  it('marks days already logged: same values vs different (replaced unless keeping)', async () => {
     const c = ctx()
     await saveWeighIn(c, { date: '2026-09-25', weightLb: 162.8, confirmed: true })
     await saveWeighIn(c, { date: '2026-09-26', weightLb: 170, confirmed: true })
-    const p = await previewScaleImport(c, { text: FILE })
+    const p = await previewScaleImport(c, { text: FILE, replaceExisting: false })
     const status = (d: string) => p.days.find((x) => x.reading.date === d)?.status
     // 09-25 has the same weight; the file adds scale fields too, so it isn't "same".
     expect(status('2026-09-25')).toBe('exists')
     expect(status('2026-09-26')).toBe('exists')
-    const r = await previewScaleImport(c, { text: FILE, replaceExisting: true })
+    const r = await previewScaleImport(c, { text: FILE })
     expect(r.days.find((x) => x.reading.date === '2026-09-26')?.status).toBe('update')
   })
 
@@ -82,10 +82,10 @@ describe('previewScaleImport', () => {
 })
 
 describe('importScaleReadings', () => {
-  it('adds new days, fills the seed day and leaves logged days alone', async () => {
+  it('adds new days, fills the seed day and keeps logged days when asked to', async () => {
     const c = ctx()
     await saveWeighIn(c, { date: '2026-09-26', weightLb: 170, confirmed: true })
-    const result = await importScaleReadings(c, { text: FILE })
+    const result = await importScaleReadings(c, { text: FILE, replaceExisting: false })
     expect(result).toEqual({ added: 1, updated: 1, skipped: 2 })
     expect(await c.db.bodyEntries.get(SEED_DATE)).toMatchObject({
       source: 'user',
@@ -103,12 +103,12 @@ describe('importScaleReadings', () => {
     expect(await c.db.bodyEntries.get('2026-10-05' as never)).toBeUndefined()
   })
 
-  it('replaces logged days and restores deleted ones when asked', async () => {
+  it('by default replaces logged days (imported data wins) and restores deleted ones', async () => {
     const c = ctx()
     await saveWeighIn(c, { date: '2026-09-26', weightLb: 170, confirmed: true })
     await saveWeighIn(c, { date: '2026-09-25', weightLb: 150, confirmed: true })
     await voidBodyEntry(c, '2026-09-25')
-    await importScaleReadings(c, { text: FILE, replaceExisting: true })
+    await importScaleReadings(c, { text: FILE })
     expect(await c.db.bodyEntries.get('2026-09-26' as never)).toMatchObject({ weightLb: 163 })
     expect(await c.db.bodyEntries.get('2026-09-25' as never)).toMatchObject({
       weightLb: 162.8,

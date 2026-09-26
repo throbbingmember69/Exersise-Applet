@@ -18,6 +18,8 @@ Binding decisions for the Exercise Applet. **Precedence:** the user decisions be
 | Diet breaks | Not in v1. The model reserves `parentPhaseId` and check-in "pauses" so they can be added later. |
 | Timer alerts | Android: vibrate + sound + a service-worker notification when backgrounded. Timestamp-based. Screen wake lock during sessions. |
 | Git identity | Repo-local, using your GitHub noreply email (confirmed with you before the first commit) |
+| Scale and food imports | CSV imports for now: the smart scale's export (Arboleaf; earliest reading per day) and Cronometer's Daily Nutrition or Servings export. **Imported data wins:** a day in the file replaces what was typed for it (the scale import can opt to keep typed days). Nutrition imports never touch steps. |
+| Native Android app | Deferred (2026-09-26). Stay a web app for now. If automation is wanted later, the plan is to wrap this app in Capacitor (sideloaded APK) with a Health Connect reader, not a native rewrite. Research: Arboleaf writes to Health Connect; Cronometer reads nutrition from Health Connect but most likely doesn't write the food log to it; Cronometer has no public API for individuals. |
 
 **Correction:** chin-up e1RM uses bodyweight + added load. On a cut, bodyweight loss alone lowers it by about 1–1.5% over 3 weeks (at 1 lb/week), well under the 5% strength-slide trigger.
 

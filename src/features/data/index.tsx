@@ -22,6 +22,7 @@ import { isServiceError } from '@/services/errors'
 import ConfirmDialog from '@/ui/ConfirmDialog'
 import { Badge, Button, Card, PageHeader, Stack } from '@/ui/kit'
 import kit from '@/ui/kit.module.css'
+import CronometerImportCard from './CronometerImportCard'
 import ScaleImportCard from './ScaleImportCard'
 import styles from './data.module.css'
 
@@ -125,6 +126,8 @@ export default function Data() {
         </Card>
 
         <ScaleImportCard />
+
+        <CronometerImportCard />
 
         <Card title="Export CSV">
           <p className={styles.hint}>For spreadsheets. Loads in lb, dates as YYYY-MM-DD.</p>

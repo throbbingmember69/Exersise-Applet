@@ -41,14 +41,14 @@ export default function ScaleImportCard() {
   const [text, setText] = useState<string | null>(null)
   const [fileName, setFileName] = useState('')
   const [unit, setUnit] = useState<MassUnit | undefined>(undefined)
-  const [replace, setReplace] = useState(false)
+  const [keep, setKeep] = useState(false)
   const [preview, setPreview] = useState<ScaleImportPreview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const run = useCommand(importScaleReadings)
 
-  const refresh = async (t: string, u: MassUnit | undefined, r: boolean) => {
+  const refresh = async (t: string, u: MassUnit | undefined, k: boolean) => {
     try {
-      setPreview(await previewScaleImport(ctx, { text: t, massUnit: u, replaceExisting: r }))
+      setPreview(await previewScaleImport(ctx, { text: t, massUnit: u, replaceExisting: !k }))
       setError(null)
     } catch (e) {
       setPreview(null)
@@ -62,15 +62,15 @@ export default function ScaleImportCard() {
     setText(t)
     setFileName(file.name)
     setUnit(undefined)
-    setReplace(false)
+    setKeep(false)
     await refresh(t, undefined, false)
   }
 
   const onImport = async () => {
     if (text === null) return
-    const result = await run.run({ text, massUnit: unit, replaceExisting: replace })
+    const result = await run.run({ text, massUnit: unit, replaceExisting: !keep })
     if (!result) return
-    await refresh(text, unit, replace)
+    await refresh(text, unit, keep)
   }
 
   const writable = preview ? preview.counts.new + preview.counts.update : 0
@@ -79,7 +79,8 @@ export default function ScaleImportCard() {
     <Card title="Import from your smart scale">
       <p className={styles.hint}>
         In the Arboleaf app: History → clock icon → Export, save the CSV, then pick it here. One
-        reading per day is kept, the earliest (your morning weigh-in).
+        reading per day is kept, the earliest (your morning weigh-in), and it replaces what you
+        typed for that day.
       </p>
       <label className={`${kit.button} ${kit.block}`}>
         Choose CSV file
@@ -113,7 +114,7 @@ export default function ScaleImportCard() {
                   aria-pressed={(unit ?? preview.massUnit) === u}
                   onClick={() => {
                     setUnit(u)
-                    void refresh(text!, u, replace)
+                    void refresh(text!, u, keep)
                   }}
                 >
                   Weights in {u}
@@ -143,11 +144,11 @@ export default function ScaleImportCard() {
               ))}
           </p>
           <Toggle
-            label="Replace days I already logged"
-            hint="Otherwise days with a different entry keep yours"
-            checked={replace}
+            label="Keep days I entered by hand"
+            hint="Otherwise the scale’s reading replaces a day you already logged"
+            checked={keep}
             onChange={(v) => {
-              setReplace(v)
+              setKeep(v)
               void refresh(text!, unit, v)
             }}
           />
