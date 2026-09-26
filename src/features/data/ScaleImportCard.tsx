@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useCommand, useCtx, useUnits } from '@/app/hooks'
 import type { MassUnit } from '@/domain/scaleCsv'
 import { formatMassWithUnit } from '@/domain/units'
-import { readFileText } from '@/platform/files'
+import { SpreadsheetError } from '@/domain/xlsx'
+import { IMPORT_FILE_ACCEPT, readTableFile } from '@/platform/spreadsheet'
 import { isServiceError } from '@/services/errors'
 import {
   importScaleReadings,
@@ -32,8 +33,8 @@ const ORDER_TEXT = {
 }
 
 /**
- * Import a smart-scale CSV (Arboleaf app: History → clock icon → Export). Shows what was
- * recognized and what each day will do before writing anything.
+ * Import a smart-scale export (Arboleaf app: History → clock icon → Export, an Excel file; CSV
+ * works too). Shows what was recognized and what each day will do before writing anything.
  */
 export default function ScaleImportCard() {
   const ctx = useCtx()
@@ -58,7 +59,15 @@ export default function ScaleImportCard() {
 
   const onFile = async (file: File | undefined) => {
     if (!file) return
-    const t = await readFileText(file)
+    let t: string
+    try {
+      t = await readTableFile(file)
+    } catch (e) {
+      setText(null)
+      setPreview(null)
+      setError(e instanceof SpreadsheetError ? e.message : 'Could not read that file.')
+      return
+    }
     setText(t)
     setFileName(file.name)
     setUnit(undefined)
@@ -78,15 +87,15 @@ export default function ScaleImportCard() {
   return (
     <Card title="Import from your smart scale">
       <p className={styles.hint}>
-        In the Arboleaf app: History → clock icon → Export, save the CSV, then pick it here. One
-        reading per day is kept, the earliest (your morning weigh-in), and it replaces what you
+        In the Arboleaf app: History → clock icon → Export, then pick the Excel file here (a CSV
+        works too). Each day uses your earliest weigh-in (the morning one), and it replaces what you
         typed for that day.
       </p>
       <label className={`${kit.button} ${kit.block}`}>
-        Choose CSV file
+        Choose file
         <input
           type="file"
-          accept=".csv,text/csv,text/plain"
+          accept={IMPORT_FILE_ACCEPT}
           className={kit.srOnly}
           onChange={(e) => void onFile(e.target.files?.[0])}
         />

@@ -97,6 +97,61 @@ describe('parseScaleCsv', () => {
   })
 })
 
+// The real Arboleaf export's headers and date format (newest first, "- -" for missing values,
+// dozens of extra columns); the values here are made up.
+const ARBOLEAF_REAL = [
+  'Measure Time,Weight(lb),Body Fat(%),BMI,Skeletal Muscle(%),Muscle Mass(lb),Protein(%),BMR(kcal),Fat-free Body Weight(lb),Subcutaneous Fat Percentage(%),Visceral Fat,Body Water(%),Bone Mass(lb),Body Type,Metabolic Age,Subcutaneous Fat(lb),Skeleton Muscle Mass(lb),Muscle Mass Percentage(%),Body Fat Mass(lb),Weight Control(lb),Target Weight(lb),Left arm muscle mass(lb),Body fat rate of right upper limb(%),Device Name',
+  '09/26/2026 08:31:01,163.7,14.4,22.8,55.2,133.1,19.2,1745,140.1,12.8,5,58.0,7.8,Normal,21,20.9,90.4,81.3,23.6,0,165,8.1,15.0,Scale',
+  '09/26/2026 08:30:40,163.7,- -,22.8,- -,- -,- -,- -,- -,- -,- -,- -,- -,,- -,,,,,,,,,Scale',
+  '09/26/2026 08:30:24,163.9,14.5,22.8,55.1,133.0,19.2,1744,140.0,12.9,5,57.9,7.8,Normal,21,21.0,90.3,81.2,23.8,0,165,8.1,15.1,Scale',
+  '09/22/2026 05:49:36,163.5,14.3,22.8,55.3,132.9,19.2,1743,140.1,12.7,5,58.1,7.8,Normal,21,20.8,90.4,81.3,23.4,0,165,8.1,14.9,Scale',
+  '09/22/2026 05:49:27,163.5,- -,22.8,- -,- -,- -,- -,- -,- -,- -,- -,- -,,- -,,,,,,,,,Scale',
+].join('\n')
+
+describe('parseScaleCsv on the real Arboleaf layout', () => {
+  it('finds the columns, reads M/D/Y with seconds, and fills each value from the earliest reading that has it', () => {
+    const r = parseScaleCsv(ARBOLEAF_REAL)
+    expect(r.dateOrder).toBe('MDY')
+    expect(r.massUnit).toBe('lb')
+    expect(
+      Object.fromEntries(Object.entries(r.columns.fields).map(([k, i]) => [k, r.headers[i]])),
+    ).toEqual({
+      weight: 'Weight(lb)',
+      bodyFatPct: 'Body Fat(%)',
+      skeletalMusclePct: 'Skeletal Muscle(%)',
+      muscleMass: 'Muscle Mass(lb)',
+      subcutFatPct: 'Subcutaneous Fat Percentage(%)',
+      visceralRating: 'Visceral Fat',
+    })
+    expect(r.readings).toEqual([
+      {
+        // 05:49:27 is weight only; the full reading 9 s later supplies the rest.
+        date: '2026-09-22',
+        minuteOfDay: 5 * 60 + 49,
+        rawDate: '09/22/2026 05:49:27',
+        weightLb: 163.5,
+        bodyFatPct: 14.3,
+        muscleMassLb: 132.9,
+        skeletalMusclePct: 55.3,
+        subcutFatPct: 12.7,
+        visceralRating: 5,
+      },
+      {
+        // Earliest by seconds (08:30:24), not the first row in the file.
+        date: '2026-09-26',
+        minuteOfDay: 8 * 60 + 30,
+        rawDate: '09/26/2026 08:30:24',
+        weightLb: 163.9,
+        bodyFatPct: 14.5,
+        muscleMassLb: 133,
+        skeletalMusclePct: 55.1,
+        subcutFatPct: 12.9,
+        visceralRating: 5,
+      },
+    ])
+  })
+})
+
 describe('helpers', () => {
   it('reads quoted fields with delimiters, quotes and line breaks', () => {
     expect(readDelimited('a,"b,c","d ""e"""\r\n1,2,3\n', ',')).toEqual([

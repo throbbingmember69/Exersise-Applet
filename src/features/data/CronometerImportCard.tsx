@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useCommand, useCtx } from '@/app/hooks'
 import type { CronometerField } from '@/domain/cronometerCsv'
-import { readFileText } from '@/platform/files'
+import { SpreadsheetError } from '@/domain/xlsx'
+import { IMPORT_FILE_ACCEPT, readTableFile } from '@/platform/spreadsheet'
 import { isServiceError } from '@/services/errors'
 import {
   importCronometer,
@@ -62,7 +63,15 @@ export default function CronometerImportCard() {
 
   const onFile = async (file: File | undefined) => {
     if (!file) return
-    const t = await readFileText(file)
+    let t: string
+    try {
+      t = await readTableFile(file)
+    } catch (e) {
+      setText(null)
+      setPreview(null)
+      setError(e instanceof SpreadsheetError ? e.message : 'Could not read that file.')
+      return
+    }
     setText(t)
     setFileName(file.name)
     await refresh(t)
@@ -90,10 +99,10 @@ export default function CronometerImportCard() {
         steps are kept.
       </p>
       <label className={`${kit.button} ${kit.block}`}>
-        Choose CSV file
+        Choose file
         <input
           type="file"
-          accept=".csv,text/csv,text/plain"
+          accept={IMPORT_FILE_ACCEPT}
           className={kit.srOnly}
           onChange={(e) => void onFile(e.target.files?.[0])}
         />

@@ -1,5 +1,7 @@
 // Smart-scale CSV exports (Arboleaf and similar): find the columns by their headers, parse the
-// readings and keep one per day, the earliest (the spec's "weigh in every morning" rule).
+// readings and keep one per day, the earliest (the spec's "weigh in every morning" rule). Each
+// value comes from the day's earliest reading that has it: the scale often logs a weight-only
+// reading seconds before the full body-composition one, and that pair is one weigh-in.
 //
 // The export format isn't documented, so everything is detected rather than hard-coded:
 // - delimiter (comma, semicolon or tab), quoted fields, a UTF-8 BOM;
@@ -30,9 +32,9 @@ export interface ScaleColumns {
 
 export interface ScaleReading {
   date: LocalDate
-  /** Minutes after midnight (0 when the export has no time). */
+  /** Minutes after midnight of the day's earliest reading (0 when the export has no time). */
   minuteOfDay: number
-  /** Raw date text, for the preview. */
+  /** Raw date text of the day's earliest reading, for the preview. */
   rawDate: string
   weightLb: number | null
   bodyFatPct: number | null
@@ -48,7 +50,7 @@ export interface ScaleCsvResult {
   dateOrder: DateOrder | null
   /** Mass unit used for weight and muscle mass (null = couldn't tell; pass one in). */
   massUnit: MassUnit | null
-  /** One reading per date, the earliest, oldest date first. */
+  /** One reading per date (each value from the earliest reading that has it), oldest first. */
   readings: ScaleReading[]
   /** Rows read (before keeping one per day). */
   rowCount: number
@@ -118,6 +120,15 @@ export function detectColumns(headers: readonly string[]): ScaleColumns {
 
 // ── Whole file ──────────────────────────────────────────────────────────────
 
+const VALUE_KEYS = [
+  'weightLb',
+  'bodyFatPct',
+  'muscleMassLb',
+  'skeletalMusclePct',
+  'subcutFatPct',
+  'visceralRating',
+] as const satisfies readonly (keyof ScaleReading)[]
+
 /** Parse a scale export. `massUnit` overrides the detected unit (the preview's unit picker). */
 export function parseScaleCsv(text: string, opts: { massUnit?: MassUnit } = {}): ScaleCsvResult {
   const { headers, rows, decimalComma } = readTable(text)
@@ -163,7 +174,7 @@ export function parseScaleCsv(text: string, opts: { massUnit?: MassUnit } = {}):
 
   const toLb = (v: number | null) =>
     v === null ? null : massUnit === 'kg' ? kgToLb(v) : massUnit === 'lb' ? v : null
-  const byDate = new Map<LocalDate, ScaleReading>()
+  const byDate = new Map<LocalDate, { second: number; reading: ScaleReading }[]>()
   rows.forEach((r, i) => {
     const d = dates[i]
     const raw = rawDates[i]!
@@ -177,7 +188,7 @@ export function parseScaleCsv(text: string, opts: { massUnit?: MassUnit } = {}):
     }
     const reading: ScaleReading = {
       date: d.date,
-      minuteOfDay: d.minute,
+      minuteOfDay: Math.floor(d.second / 60),
       rawDate: raw,
       weightLb: toLb(cell('weight')),
       bodyFatPct: cell('bodyFatPct'),
@@ -198,14 +209,25 @@ export function parseScaleCsv(text: string, opts: { massUnit?: MassUnit } = {}):
       warnings.push(`Row ${i + 2}: no readable values, skipped.`)
       return
     }
-    const kept = byDate.get(d.date)
-    if (!kept || reading.minuteOfDay < kept.minuteOfDay) byDate.set(d.date, reading)
+    const day = byDate.get(d.date)
+    if (day) day.push({ second: d.second, reading })
+    else byDate.set(d.date, [{ second: d.second, reading }])
+  })
+
+  const readings = [...byDate.values()].map((day) => {
+    // Stable sort: readings with the same time keep file order.
+    const sorted = [...day].sort((a, b) => a.second - b.second).map((x) => x.reading)
+    const merged = { ...sorted[0]! }
+    for (const k of VALUE_KEYS) {
+      if (merged[k] === null) merged[k] = sorted.find((x) => x[k] !== null)?.[k] ?? null
+    }
+    return merged
   })
 
   return {
     ...empty,
     dateOrder,
     massUnit,
-    readings: [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
+    readings: readings.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
   }
 }

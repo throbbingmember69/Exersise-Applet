@@ -56,11 +56,16 @@ export interface Table {
   decimalComma: boolean
 }
 
-/** Split a whole export into trimmed headers and rows (BOM stripped, delimiter detected). */
+/**
+ * Split a whole export into trimmed headers and rows (BOM stripped, delimiter detected). A first
+ * line "sep=;" (Excel's convention) names the delimiter instead and is dropped.
+ */
 export function readTable(text: string): Table {
-  const clean = text.replace(/^\uFEFF/, '')
+  let clean = text.replace(/^\uFEFF/, '')
+  const sep = /^sep=([,;\t])(?:\r\n|\n|\r|$)/i.exec(clean)
+  if (sep) clean = clean.slice(sep[0].length)
   const firstLine = clean.split(/\r\n|\n|\r/, 1)[0] ?? ''
-  const delimiter = detectDelimiter(firstLine)
+  const delimiter = sep?.[1] ?? detectDelimiter(firstLine)
   const [headerRow = [], ...rows] = readDelimited(clean, delimiter)
   return { headers: headerRow.map((h) => h.trim()), rows, decimalComma: delimiter === ';' }
 }
@@ -83,31 +88,40 @@ interface DateParts {
   a: number
   b: number
   c: number
-  minute: number
+  second: number
   order: 'Y' | 'x' | 'named'
 }
 
-function timeOf(h?: string, m?: string, ampm?: string): number {
+/** Seconds after midnight (0 when there's no time). */
+function timeOf(h?: string, m?: string, s?: string, ampm?: string): number {
   if (h === undefined || m === undefined) return 0
   let hour = Number(h)
   const ap = ampm?.toLowerCase()
   if (ap === 'pm' && hour < 12) hour += 12
   if (ap === 'am' && hour === 12) hour = 0
-  return hour * 60 + Number(m)
+  return hour * 3600 + Number(m) * 60 + (s === undefined ? 0 : Number(s))
 }
 
 function splitDate(raw: string): DateParts | null {
   const s = raw.trim()
-  const TIME = String.raw`(?:[ T,]+(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?\s*(am|pm)?)?`
+  const TIME = String.raw`(?:[ T,]+(\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?\s*(am|pm)?)?`
   let m = new RegExp(String.raw`^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})${TIME}`, 'i').exec(s)
-  if (m) return { a: +m[1]!, b: +m[2]!, c: +m[3]!, minute: timeOf(m[4], m[5], m[6]), order: 'Y' }
+  if (m)
+    return { a: +m[1]!, b: +m[2]!, c: +m[3]!, second: timeOf(m[4], m[5], m[6], m[7]), order: 'Y' }
   m = new RegExp(String.raw`^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})${TIME}`, 'i').exec(s)
-  if (m) return { a: +m[1]!, b: +m[2]!, c: +m[3]!, minute: timeOf(m[4], m[5], m[6]), order: 'x' }
+  if (m)
+    return { a: +m[1]!, b: +m[2]!, c: +m[3]!, second: timeOf(m[4], m[5], m[6], m[7]), order: 'x' }
   m = new RegExp(String.raw`^([a-z]{3,})\.?\s+(\d{1,2}),?\s+(\d{4})${TIME}`, 'i').exec(s)
   if (m) {
     const month = MONTHS.indexOf(m[1]!.slice(0, 3).toLowerCase()) + 1
     if (month === 0) return null
-    return { a: +m[3]!, b: month, c: +m[2]!, minute: timeOf(m[4], m[5], m[6]), order: 'named' }
+    return {
+      a: +m[3]!,
+      b: month,
+      c: +m[2]!,
+      second: timeOf(m[4], m[5], m[6], m[7]),
+      order: 'named',
+    }
   }
   return null
 }
@@ -120,8 +134,8 @@ function toLocal(y: number, mo: number, d: number): LocalDate | null {
 
 export interface ResolvedDate {
   date: LocalDate
-  /** Minutes after midnight (0 when the cell has no time). */
-  minute: number
+  /** Seconds after midnight (0 when the cell has no time). */
+  second: number
 }
 
 /**
@@ -147,7 +161,7 @@ export function resolveDates(cells: readonly string[]): {
         : order === 'DMY'
           ? toLocal(p.c, p.b, p.a)
           : toLocal(p.c, p.a, p.b)
-    return date ? { date, minute: p.minute } : null
+    return date ? { date, second: p.second } : null
   })
   return { order, dates }
 }

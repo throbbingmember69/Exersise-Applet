@@ -18,7 +18,47 @@ const SERVINGS = [
   '2026-09-26,08:00,Breakfast,Eggs,3 large,215.0,1.1,1.1,14.3,18.9,Eggs',
 ].join('\n')
 
+// The real Daily Nutrition header (Cronometer, September 2026); the values are made up.
+const REAL_HEADER =
+  'Date,Energy (kcal),Alcohol (g),Caffeine (mg),Oxalate (mg),Phytate (mg),Water (g),B1 (Thiamine) (mg),B2 (Riboflavin) (mg),B3 (Niacin) (mg),B5 (Pantothenic Acid) (mg),B6 (Pyridoxine) (mg),B12 (Cobalamin) (µg),Folate (µg),Vitamin A (µg),Vitamin C (mg),Vitamin D (IU),Vitamin E (mg),Vitamin K (µg),Calcium (mg),Copper (mg),Iron (mg),Magnesium (mg),Manganese (mg),Phosphorus (mg),Potassium (mg),Selenium (µg),Sodium (mg),Zinc (mg),Net Carbs (g),Carbs (g),Fiber (g),Insoluble Fiber (g),Soluble Fiber (g),Starch (g),Sugars (g),Added Sugars (g),Fat (g),Cholesterol (mg),Monounsaturated (g),Polyunsaturated (g),Saturated (g),Trans-Fats (g),Omega-3 (g),ALA (g),DHA (g),EPA (g),Omega-6 (g),AA (g),LA (g),Cystine (g),Histidine (g),Isoleucine (g),Leucine (g),Lysine (g),Methionine (g),Phenylalanine (g),Protein (g),Threonine (g),Tryptophan (g),Tyrosine (g),Valine (g),Completed'
+
+function realRow(values: Record<string, string>): string {
+  return REAL_HEADER.split(',')
+    .map((h) => values[h] ?? (h === 'Completed' ? 'false' : '1.00'))
+    .join(',')
+}
+
 describe('parseCronometerCsv', () => {
+  it('reads the real Daily Nutrition layout (net carbs come before total carbs)', () => {
+    const r = parseCronometerCsv(
+      [
+        REAL_HEADER,
+        realRow({
+          Date: '2026-09-25',
+          'Energy (kcal)': '2893.56',
+          'Net Carbs (g)': '200.50',
+          'Carbs (g)': '237.70',
+          'Fat (g)': '106.13',
+          'Protein (g)': '266.75',
+        }),
+        '',
+      ].join('\n'),
+    )
+    expect(r.kind).toBe('daily')
+    expect(r.recognized).toEqual({
+      date: 'Date',
+      kcal: 'Energy (kcal)',
+      proteinG: 'Protein (g)',
+      carbsG: 'Carbs (g)',
+      fatG: 'Fat (g)',
+    })
+    expect(r.ignoredCount).toBe(58)
+    expect(r.days).toEqual([
+      { date: '2026-09-25', kcal: 2893.56, proteinG: 266.75, carbsG: 237.7, fatG: 106.13, rows: 1 },
+    ])
+    expect(r.warnings).toEqual([])
+  })
+
   it('reads a Daily Nutrition export: total carbs and fat, not net carbs or fat subtypes', () => {
     const r = parseCronometerCsv(DAILY)
     expect(r.kind).toBe('daily')

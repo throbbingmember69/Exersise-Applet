@@ -2,7 +2,9 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { disposeCtx, renderScreen, type TestCtx } from '@/app/testing'
+import { makeStrXlsx } from '@/domain/xlsxTestFixtures'
 import { createTestCtx } from '@/services/context'
+import { saveWeighIn } from '@/services/nutrition/body'
 import ScaleImportCard from './ScaleImportCard'
 
 const ctxs: TestCtx[] = []
@@ -33,5 +35,43 @@ describe('ScaleImportCard', () => {
     })
     expect((await ctx.db.bodyEntries.get('2026-09-26' as never))?.muscleMassLb).toBe(132)
     expect(await screen.findByRole('button', { name: 'Nothing new to import' })).toBeDisabled()
+  })
+
+  it('reads the Arboleaf Excel export and replaces a day typed by hand unless kept', async () => {
+    const ctx = createTestCtx({ startMs: Date.UTC(2026, 9, 1, 18) })
+    ctxs.push(ctx)
+    await saveWeighIn(ctx, { date: '2026-09-22', weightLb: 170, confirmed: true })
+    renderScreen(<ScaleImportCard />, { ctx })
+    const xlsx = makeStrXlsx([
+      ['Measure Time', 'Weight(lb)', 'Body Fat(%)', 'Muscle Mass(lb)', 'Device Name'],
+      ['09/26/2026 08:31:01', '163.7', '14.4', '133.1', 'Scale'],
+      ['09/26/2026 08:30:40', '163.7', '- -', '- -', 'Scale'],
+      ['09/22/2026 05:49:27', '163.5', '14.3', '132.9', 'Scale'],
+    ])
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement
+    await userEvent.upload(
+      input,
+      new File([xlsx as Uint8Array<ArrayBuffer>], 'Body Composition-arboleaf.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+    )
+
+    expect(await screen.findByText(/dates read as month\/day\/year/)).toBeInTheDocument()
+    expect(screen.getByText('1 new')).toBeInTheDocument()
+    expect(screen.getByText('1 update')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('checkbox', { name: /Keep days I entered by hand/ }))
+    expect(await screen.findByText('1 kept yours')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('checkbox', { name: /Keep days I entered by hand/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Import 2 days' }))
+
+    await waitFor(async () => {
+      // The weight-only reading (08:30:40) is the earliest; body fat comes from 08:31:01.
+      expect(await ctx.db.bodyEntries.get('2026-09-26' as never)).toMatchObject({
+        weightLb: 163.7,
+        bodyFatPct: 14.4,
+        muscleMassLb: 133.1,
+      })
+    })
+    expect((await ctx.db.bodyEntries.get('2026-09-22' as never))?.weightLb).toBe(163.5)
   })
 })
