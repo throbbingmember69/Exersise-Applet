@@ -4,7 +4,9 @@
 // - A finished or abandoned session changes only through explicit Edit mode, and only in the
 //   whitelisted fields below. It never goes back to in progress.
 // - `sessionExercises` snapshots are never edited. While a session is in progress a row can be
-//   swapped or removed only before any (non-voided) set is logged against it.
+//   swapped or removed only before any (non-voided) set is logged against it. Its voided sets
+//   are then hard-deleted with it: the one exception to soft deletes, because sets voided in a
+//   session still in progress are scratch data, not history.
 // - A command only ever touches rows of the one session it was aimed at.
 // Guards are pure checks that throw a ServiceError with a stable code and a readable message.
 import type { LoadType, Session, SessionExercise, SetLog } from '@/domain/types'
@@ -224,6 +226,15 @@ export function assertLoad(loadLb: number, loadType: LoadType): void {
 
 export function assertBodyweight(bodyweightLb: number | null): void {
   if (bodyweightLb !== null && !(Number.isFinite(bodyweightLb) && bodyweightLb > 0)) {
+    throw new ServiceError('invalid_bodyweight', 'Bodyweight must be a positive number.', {
+      bodyweightLb,
+    })
+  }
+}
+
+/** An entered bodyweight: a positive number (null, "unknown", isn't something to enter). */
+export function assertKnownBodyweight(bodyweightLb: unknown): asserts bodyweightLb is number {
+  if (typeof bodyweightLb !== 'number' || !(Number.isFinite(bodyweightLb) && bodyweightLb > 0)) {
     throw new ServiceError('invalid_bodyweight', 'Bodyweight must be a positive number.', {
       bodyweightLb,
     })

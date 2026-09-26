@@ -1,5 +1,5 @@
-// Start sheet: which gym and program day to pre-select, the deload toggle, and a preview of every
-// slot's suggested load before the session is created.
+// Start sheet: which gym and program day to pre-select, the deload toggle, the session's default
+// bodyweight, and a preview of every slot's suggested load before the session is created.
 import { compareLocalDate, weekStart, weekday } from '@/domain/dates'
 import type {
   LoadType,
@@ -11,6 +11,7 @@ import type {
   Weekday,
 } from '@/domain/types'
 import type { ServiceCtx } from '../../context'
+import { resolveSessionBodyweight, type SessionBodyweight } from '../bodyweight'
 import {
   activeDays,
   activeGyms,
@@ -19,6 +20,7 @@ import {
   gymNameOf,
   loadQueryData,
   modelAsOf,
+  queryDate,
   resolveGymId,
   type DeloadView,
   type PrescriptionBadge,
@@ -49,18 +51,26 @@ export interface StartOptions {
   suggestedDayId: string | null
   inProgressSessionId: string | null
   deload: DeloadView
+  /**
+   * The bodyweight startSession stores unless the lifter changes it (same-day weigh-in → trend →
+   * seed → null). Pass `bodyweightLb` to startSession only when it was edited. `source` means
+   * nothing when `weightLb` is null.
+   */
+  bodyweight: SessionBodyweight
 }
 
 /**
  * What the start sheet pre-selects on `today`. Suggested day: today's scheduled day unless it was
  * already done this training week; otherwise the day after the latest session's day in program
- * order (wrapping); with no history, today's scheduled day or else the first day.
+ * order (wrapping); with no history, today's scheduled day or else the first day. Throws
+ * ServiceError 'invalid_date' for a bad date.
  */
 export async function getStartOptions(
   ctx: Pick<ServiceCtx, 'db'>,
-  { today }: { today: LocalDate },
+  { today: todayInput }: { today: LocalDate },
 ): Promise<StartOptions> {
-  const q = await loadQueryData(ctx)
+  const today = queryDate(todayInput, 'Today')
+  const q = await loadQueryData(ctx, { bodyEntries: true })
   const days = activeDays(q.data.programDays)
   const history = q.index.counted.filter((s) => compareLocalDate(s.date, today) <= 0)
   const lastDone = new Map<string, LocalDate>()
@@ -87,6 +97,10 @@ export async function getStartOptions(
     }),
     inProgressSessionId: q.model.inProgressSession()?.id ?? null,
     deload: deloadView(modelAsOf(q.data, today)),
+    bodyweight: resolveSessionBodyweight(
+      { bodyEntries: q.bodyEntries, settings: q.model.settings },
+      today,
+    ),
   }
 }
 
@@ -152,14 +166,18 @@ export interface SessionPreview {
   slots: PreviewSlot[]
 }
 
-/** The start-sheet preview of a program day at a gym; null if the day or gym doesn't exist. */
+/**
+ * The start-sheet preview of a program day at a gym; null when startSession would refuse them:
+ * the day or gym doesn't exist or is archived.
+ */
 export async function previewSession(
   ctx: Pick<ServiceCtx, 'db'>,
   { gymId, programDayId, isDeload }: { gymId: string; programDayId: string; isDeload: boolean },
 ): Promise<SessionPreview | null> {
   const q = await loadQueryData(ctx)
   const day = q.data.programDays.find((d) => d.id === programDayId)
-  if (!day || !q.gyms.some((g) => g.id === gymId)) return null
+  const gym = q.gyms.find((g) => g.id === gymId)
+  if (!day || day.archivedAt !== null || !gym || gym.archivedAt !== null) return null
   const { model } = q
 
   const slots = model.slotsOf(programDayId).map((slot): PreviewSlot => {

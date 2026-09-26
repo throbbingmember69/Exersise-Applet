@@ -48,7 +48,7 @@ async function logSeedWeek(c: TestCtx) {
 describe('getVolumeDashboard: planned', () => {
   it('matches the spec’s weekly totals for the seed program (94 sets)', async () => {
     const c = pool.make()
-    const dash = await getVolumeDashboard(c, { asOf: d('2026-09-30') })
+    const dash = await getVolumeDashboard(c, { weekOf: d('2026-09-30'), today: d('2026-09-30') })
     expect(dash.muscles.map((m) => [m.muscleId, m.planned])).toEqual(SPEC_WEEKLY_TOTALS)
     expect(dash.muscles.map((m) => m.plannedFlag)).toEqual(SPEC_FLAGS)
     expect(dash.planned).toEqual({ totalSets: 94, capWarnings: [] })
@@ -85,16 +85,25 @@ describe('getVolumeDashboard: planned', () => {
     const planned = (dash: Awaited<ReturnType<typeof getVolumeDashboard>>) =>
       Object.fromEntries(dash.muscles.map((m) => [m.muscleId, m.planned]))
 
-    const home = await getVolumeDashboard(c, { asOf: d('2026-09-30'), gymId: 'gym-2' })
+    const home = await getVolumeDashboard(c, {
+      weekOf: d('2026-09-30'),
+      today: d('2026-09-30'),
+      gymId: 'gym-2',
+    })
     expect(home.gymName).toBe('Home')
     expect(planned(home)).toMatchObject({ chest: 14, front_delts: 7, triceps: 14.5 })
     expect(home.planned.totalSets).toBe(94)
-    expect(planned(await getVolumeDashboard(c, { asOf: d('2026-09-30') }))).toMatchObject({
+    expect(
+      planned(await getVolumeDashboard(c, { weekOf: d('2026-09-30'), today: d('2026-09-30') })),
+    ).toMatchObject({
       front_delts: 8.5,
       triceps: 16,
     })
     await c.db.appState.put({ key: 'lastGymId', value: 'gym-2' })
-    const byDefault = await getVolumeDashboard(c, { asOf: d('2026-09-30') })
+    const byDefault = await getVolumeDashboard(c, {
+      weekOf: d('2026-09-30'),
+      today: d('2026-09-30'),
+    })
     expect(byDefault.gymId).toBe('gym-2')
     expect(planned(byDefault)).toMatchObject({ front_delts: 7, triceps: 14.5 })
   })
@@ -103,7 +112,7 @@ describe('getVolumeDashboard: planned', () => {
     const c = pool.make()
     // 6 sets of the overhead triceps extension: Push triceps 9.5 → 12.5.
     await c.db.programSlots.update('slot-push-6', { sets: 6 })
-    const dash = await getVolumeDashboard(c, { asOf: d('2026-09-30') })
+    const dash = await getVolumeDashboard(c, { weekOf: d('2026-09-30'), today: d('2026-09-30') })
     expect(dash.planned).toEqual({
       totalSets: 97,
       capWarnings: [
@@ -130,7 +139,7 @@ describe('getVolumeDashboard: logged', () => {
     await logDay(c, { programDayId: 'day-push', date: '2026-10-01', voided: true })
     await logDay(c, { programDayId: 'day-lower-a', date: '2026-10-01', status: 'abandoned' })
 
-    const dash = await getVolumeDashboard(c, { asOf: d('2026-10-04') })
+    const dash = await getVolumeDashboard(c, { weekOf: d('2026-10-04'), today: d('2026-10-05') })
     expect(dash.week).toEqual({
       start: '2026-09-28',
       end: '2026-10-04',
@@ -146,18 +155,38 @@ describe('getVolumeDashboard: logged', () => {
   it('shows no "low" flags before the week is over', async () => {
     const c = pool.make()
     await logSeedWeek(c)
-    const dash = await getVolumeDashboard(c, { asOf: d('2026-10-01') })
+    // Wednesday: only Lower A, Push and Pull have happened. Nothing has reached the band yet, and
+    // 'low' waits for the week to end, so no muscle is flagged.
+    const dash = await getVolumeDashboard(c, { weekOf: d('2026-10-01'), today: d('2026-10-01') })
     expect(dash.week).toMatchObject({ start: '2026-09-28', complete: false })
-    expect(dash.muscles.map((m) => m.loggedFlag)).toEqual(
+    expect(dash.muscles.every((m) => m.loggedFlag === null)).toBe(true)
+    // Sunday, the week's last day, with everything logged: still no 'low' (Upper may slide to
+    // Sunday) until the week is over.
+    const lastDay = await getVolumeDashboard(c, { weekOf: d('2026-10-04'), today: d('2026-10-04') })
+    expect(lastDay.week.complete).toBe(false)
+    expect(lastDay.muscles.map((m) => m.loggedFlag)).toEqual(
       SPEC_FLAGS.map((f) => (f === 'low' ? null : f)),
     )
+    // A finished past week viewed from any of its days is complete.
+    const past = await getVolumeDashboard(c, { weekOf: d('2026-09-28'), today: d('2026-10-12') })
+    expect(past.week.complete).toBe(true)
+    expect(past.muscles.map((m) => m.loggedFlag)).toEqual(SPEC_FLAGS)
+  })
+
+  it('never counts sessions dated after today', async () => {
+    const c = pool.make()
+    await logSeedWeek(c)
+    // Viewed on Wednesday: only Mon–Wed sessions (Lower A, Push, Pull) have happened.
+    const dash = await getVolumeDashboard(c, { weekOf: d('2026-09-30'), today: d('2026-09-30') })
+    expect(dash.week.sessionIds).toHaveLength(3)
+    expect(dash.logged.totalSets).toBe(18 + 19 + 18)
   })
 
   it('counts an in-progress session and never flags a deload week as low', async () => {
     const c = pool.make()
     await logDay(c, { programDayId: 'day-lower-a', date: '2026-09-28', isDeload: true })
     await logDay(c, { programDayId: 'day-push', date: '2026-09-29', status: 'in_progress' })
-    const dash = await getVolumeDashboard(c, { asOf: d('2026-10-04') })
+    const dash = await getVolumeDashboard(c, { weekOf: d('2026-10-04'), today: d('2026-10-05') })
     expect(dash.week).toMatchObject({ complete: true, isDeloadWeek: true })
     expect(dash.week.sessionIds).toHaveLength(2)
     // Deload Lower A: squat 2 + leg extension 2 = 4 quad sets; nothing flags low.
@@ -177,7 +206,7 @@ describe('getVolumeDashboard: logged', () => {
       date: '2026-09-29',
       extra: [{ exerciseId: 'ex-straight-bar-pushdown', sets: sets(3, 130, 12) }],
     })
-    const dash = await getVolumeDashboard(c, { asOf: d('2026-09-30') })
+    const dash = await getVolumeDashboard(c, { weekOf: d('2026-09-30'), today: d('2026-09-30') })
     expect(dash.logged.capWarnings).toEqual([
       {
         sessionId: id,
@@ -193,11 +222,11 @@ describe('getVolumeDashboard: logged', () => {
     await logSeedWeek(c)
     await updateSettings(c, { trainingWeekStartDay: 0 })
     // Sunday-start weeks: Sun 10-04 begins a new, empty week.
-    const dash = await getVolumeDashboard(c, { asOf: d('2026-10-04') })
+    const dash = await getVolumeDashboard(c, { weekOf: d('2026-10-04'), today: d('2026-10-04') })
     expect(dash.week).toMatchObject({ start: '2026-10-04', end: '2026-10-10', sessionIds: [] })
     expect(dash.logged.totalSets).toBe(0)
     // Sat 10-03 falls in the Sun 09-27 week, which holds all five sessions.
-    const prev = await getVolumeDashboard(c, { asOf: d('2026-10-03') })
+    const prev = await getVolumeDashboard(c, { weekOf: d('2026-10-03'), today: d('2026-10-04') })
     expect(prev.week).toMatchObject({ start: '2026-09-27', complete: true })
     expect(prev.logged.totalSets).toBe(94)
   })

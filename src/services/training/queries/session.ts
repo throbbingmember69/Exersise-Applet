@@ -31,8 +31,8 @@ import {
   loadQueryData,
   metricBasis,
   muscleRows,
+  openStallViews,
   scopeOf,
-  stallView,
   type BestSet,
   type MuscleSets,
   type PrescriptionBadge,
@@ -212,9 +212,17 @@ export interface NextSuggestionView {
   repTargets: number[]
   sets: number
   branch: Branch
-  /** The next session is a deload session (a deload is running). */
+  /**
+   * The next session is a deload session: a deload is running, or (when superseded) the track's
+   * next session was one.
+   */
   isDeload: boolean
   badge: PrescriptionBadge
+  /**
+   * A later counted session of the same track exists: this is what followed this session then,
+   * not what the track suggests now.
+   */
+  superseded: boolean
 }
 
 export interface SummaryExerciseView {
@@ -232,7 +240,10 @@ export interface SummaryExerciseView {
   notices: Notice[]
   workingSetCount: number
   prescribedSets: number
-  /** What this exercise's track suggests next time (null when it has no track). */
+  /**
+   * The suggestion that followed this session on its track (history replayed up to and including
+   * it; null when it has no track).
+   */
   next: NextSuggestionView | null
   bestSet: BestSet | null
   /** The session's metric beat every earlier point of the exercise's strength series. */
@@ -260,7 +271,10 @@ export interface SessionSummaryView {
   missesBeforeDrop: number
   exercises: SummaryExerciseView[]
   volume: SessionVolumeView
-  /** Current stall flags of this session's exercises (at this session's gym scope). */
+  /**
+   * Current stall flags of this session's exercises (at this session's gym scope), leaving out
+   * stalls answered in the suggestion log.
+   */
   stalls: StallView[]
   /** A deload to suggest now (null when none is triggered, one is running, or it was answered). */
   deloadSuggestion: { reasons: DeloadReason[]; fingerprint: string } | null
@@ -298,10 +312,7 @@ function buildSummary(q: QueryData, session: Session): SessionSummaryView {
       (se) => `${se.exerciseId}|${scopeOf(model, se.exerciseId, session.gymId)}`,
     ),
   )
-  const stalls = model
-    .stallFlags()
-    .filter((f) => f.result.stalled && inSession.has(`${f.exerciseId}|${f.scope}`))
-    .map((f) => stallView(q, model, f))
+  const stalls = openStallViews(q, model, (f) => inSession.has(`${f.exerciseId}|${f.scope}`))
 
   return {
     sessionId: session.id,
@@ -391,23 +402,36 @@ function outcomeOf(branch: Branch): ExerciseOutcome {
   }
 }
 
-/** The track's next suggestion, with the slot's current regime; null if the slot is gone. */
+/**
+ * The suggestion that followed this session on its track: the track replayed up to and including
+ * it, with the slot's current regime (null if the slot is gone). When a later counted session of
+ * the track exists the view is `superseded`, and that session says whether the next one was a
+ * deload; otherwise the running deload does.
+ */
 function nextFor(
   model: TrainingModel,
   session: Session,
   se: SessionExercise,
-  isDeload: boolean,
+  deloadActive: boolean,
 ): NextSuggestionView | null {
   if (session.programDayId === null || !model.exercise(se.exerciseId)) return null
   const slot = model.slotsOf(session.programDayId).find((s) => s.id === se.slotId)
   if (!slot) return null
-  const p = model.prescriptionFor({
-    programDayId: session.programDayId,
-    regime: slot,
-    exerciseId: se.exerciseId,
-    gymId: session.gymId,
-    isDeload,
-  })
+  const scope = model.scopeFor(se.exerciseId, session.gymId)
+  const later = model
+    .trackHistory(session.programDayId, se.exerciseId, scope)
+    .find((t) => compareSessions(t, session) > 0)
+  const isDeload = later ? later.isDeload : deloadActive
+  const p = model.prescriptionAfter(
+    {
+      programDayId: session.programDayId,
+      regime: slot,
+      exerciseId: se.exerciseId,
+      gymId: session.gymId,
+      isDeload,
+    },
+    session,
+  )
   return {
     loadLb: p.loadLb,
     repTargets: p.repTargets,
@@ -415,6 +439,7 @@ function nextFor(
     branch: p.branch,
     isDeload,
     badge: badgeFor(p),
+    superseded: later !== undefined,
   }
 }
 
@@ -485,7 +510,11 @@ export async function listSessions(
   return limit === undefined ? list : list.slice(0, Math.max(0, limit))
 }
 
-export type SessionDetailExerciseView = LoggerExerciseView & { result: SummaryExerciseView }
+export type SessionDetailExerciseView = LoggerExerciseView & {
+  result: SummaryExerciseView
+  /** Deleted (voided) sets by setIndex, for Edit mode to list and restore (restoreSet). */
+  voidedSets: SetView[]
+}
 
 export interface SessionDetailView extends Omit<LoggerView, 'exercises'> {
   exercises: SessionDetailExerciseView[]
@@ -496,7 +525,10 @@ export interface SessionDetailView extends Omit<LoggerView, 'exercises'> {
   volume: SessionVolumeView
 }
 
-/** Read-only history detail: the logged sets plus each exercise's result; null if missing. */
+/**
+ * History detail (and the Edit-mode screen): the logged sets, the deleted ones, and each
+ * exercise's result; null if missing.
+ */
 export async function getSessionDetail(
   ctx: Pick<ServiceCtx, 'db'>,
   sessionId: string,
@@ -512,6 +544,10 @@ export async function getSessionDetail(
     exercises: logger.exercises.map((e) => ({
       ...e,
       result: results.get(e.sessionExerciseId) as SummaryExerciseView,
+      voidedSets: q.index
+        .setsOf(e.sessionExerciseId)
+        .filter((s) => s.voidedAt !== null)
+        .map(setView),
     })),
     counted: summary.counted,
     voided: session.voidedAt !== null,

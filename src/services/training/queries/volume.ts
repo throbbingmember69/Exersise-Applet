@@ -1,5 +1,5 @@
 // Volume dashboard: the program's planned weekly fractional sets per muscle at a gym, and the sets
-// actually logged in the training week containing a date, each against the muscle's band, plus
+// actually logged in a chosen training week up to today, each against the muscle's band, plus
 // per-session cap warnings (planned per program day, logged per session).
 import { addDays, compareLocalDate, weekStart } from '@/domain/dates'
 import type { LocalDate, MuscleId, ProgramSlot, Weekday } from '@/domain/types'
@@ -23,6 +23,7 @@ import {
   gymNameOf,
   loadQueryData,
   muscleRows,
+  queryDate,
   resolveGymId,
   type MuscleSets,
 } from './shared'
@@ -59,7 +60,10 @@ export interface SessionCapWarning {
 }
 
 export interface VolumeDashboard {
-  asOf: LocalDate
+  /** The date that picked the week (any day of it). */
+  weekOf: LocalDate
+  /** The current date: the week is complete after it ends, and nothing later is counted. */
+  today: LocalDate
   /** The gym the plan is resolved for (null when there are no gyms). */
   gymId: string | null
   gymName: string | null
@@ -67,11 +71,14 @@ export interface VolumeDashboard {
   week: {
     start: LocalDate
     end: LocalDate
-    /** asOf is the week's last day or later, so 'low' flags apply. */
+    /** Today is after the week's last day, so 'low' flags apply. */
     complete: boolean
     /** A deload session was logged this week: no 'low' flags. */
     isDeloadWeek: boolean
-    /** Sessions counted this week (in-progress included; voided and abandoned left out). */
+    /**
+     * Sessions counted this week, dated up to today (in-progress included; voided and abandoned
+     * left out).
+     */
     sessionIds: string[]
   }
   /** Active muscles in sortOrder. */
@@ -83,12 +90,17 @@ export interface VolumeDashboard {
 /**
  * Planned vs logged weekly volume. The plan resolves each slot's exercise at `gymId` (default:
  * the last gym used). Logged volume counts every gym's sessions in the training week containing
- * `asOf`, using each session's snapshot muscle weights and its working sets.
+ * `weekOf`, dated on or before `today`, using each session's snapshot muscle weights and working
+ * sets. The week is complete (and 'low' flags apply) only once `today` is past its last day
+ * (finding #23). Throws ServiceError 'invalid_date' for a bad date.
  */
 export async function getVolumeDashboard(
   ctx: Pick<ServiceCtx, 'db'>,
-  { asOf, gymId }: { asOf: LocalDate; gymId?: string },
+  input: { weekOf: LocalDate; today: LocalDate; gymId?: string },
 ): Promise<VolumeDashboard> {
+  const weekOf = queryDate(input.weekOf, 'Week')
+  const today = queryDate(input.today, 'Today')
+  const { gymId } = input
   const q = await loadQueryData(ctx)
   const { model, index } = q
   const settings = model.settings
@@ -122,11 +134,12 @@ export async function getVolumeDashboard(
 
   // Logged.
   const weekStartDay = settings.trainingWeekStartDay as Weekday
-  const start = weekStart(asOf, weekStartDay)
+  const start = weekStart(weekOf, weekStartDay)
   const end = addDays(start, 6)
+  const until = compareLocalDate(today, end) < 0 ? today : end
   const sessionVolumes = new Map<string, VolumeTotals>()
   const logged: LoggedSession[] = q.data.sessions
-    .filter((s) => compareLocalDate(s.date, start) >= 0 && compareLocalDate(s.date, end) <= 0)
+    .filter((s) => compareLocalDate(s.date, start) >= 0 && compareLocalDate(s.date, until) <= 0)
     .map((s) => {
       const volume = loggedSessionVolume(
         index.exercisesOf(s.id),
@@ -144,7 +157,7 @@ export async function getVolumeDashboard(
     })
   const week = weeklyLoggedVolume(logged, weekStartDay).get(start)
   const loggedByMuscle = week?.byMuscle ?? new Map<MuscleId, number>()
-  const complete = compareLocalDate(asOf, end) >= 0
+  const complete = compareLocalDate(today, end) > 0
   const isDeloadWeek = week?.isDeloadWeek ?? false
   const loggedFlags = muscleFlags(loggedByMuscle, muscles, settings, {
     weekComplete: complete,
@@ -169,7 +182,8 @@ export async function getVolumeDashboard(
   })
 
   return {
-    asOf,
+    weekOf,
+    today,
     gymId: gym,
     gymName: gym === null ? null : gymNameOf(q.gyms, gym),
     sessionCap: cap,

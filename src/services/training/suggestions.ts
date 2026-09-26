@@ -53,7 +53,10 @@ export async function recordShown(ctx: ServiceCtx, input: SuggestionInput): Prom
   })
 }
 
-/** Accept or dismiss a shown suggestion. A suggestion is answered once. */
+/**
+ * Accept or dismiss a shown suggestion. A suggestion is answered once. Accepting a deload starts
+ * it, and answers the other shown deload suggestions as `acceptDeload` does.
+ */
 export async function respondSuggestion(
   ctx: ServiceCtx,
   id: string,
@@ -75,12 +78,16 @@ export async function respondSuggestion(
     if (!current) throw notFound(id)
     assertUnanswered(current)
     await db.suggestions.update(id, { status: response, respondedAt: now })
+    if (response === 'accepted' && current.kind === 'deload') {
+      await closeShownDeloads(ctx, current.id, now)
+    }
   })
 }
 
 /**
  * Accept a deload suggestion (creating its row if it was never recorded). The training model then
- * reports the deload active until its sessions are done or it is ended. Returns the row id.
+ * reports the deload active until its sessions are done or it is ended. Every other deload
+ * suggestion still shown is accepted with it (however a deload starts). Returns the row id.
  */
 export async function acceptDeload(
   ctx: ServiceCtx,
@@ -120,23 +127,44 @@ async function acceptRow(ctx: ServiceCtx, input: SuggestionInput): Promise<strin
   const now = ctx.now()
   return db.transaction('rw', db.suggestions, async () => {
     const existing = await db.suggestions.where('key').equals(input.key).first()
+    let rowId = id
     if (existing) {
       assertSameKind(existing, input.kind)
       assertUnanswered(existing)
       await db.suggestions.update(existing.id, { status: 'accepted', respondedAt: now })
-      return existing.id
+      rowId = existing.id
+    } else {
+      await db.suggestions.add({
+        id,
+        kind: input.kind,
+        key: input.key,
+        status: 'accepted',
+        payload: { ...input.payload },
+        firstShownAt: now,
+        respondedAt: now,
+      })
     }
-    await db.suggestions.add({
-      id,
-      kind: input.kind,
-      key: input.key,
-      status: 'accepted',
-      payload: { ...input.payload },
-      firstShownAt: now,
-      respondedAt: now,
-    })
-    return id
+    if (input.kind === 'deload') await closeShownDeloads(ctx, rowId, now)
+    return rowId
   })
+}
+
+/**
+ * A deload has just started (row `startedId`): every other deload suggestion still 'shown' is
+ * answered as accepted too, since the deload covers it. Otherwise the same stale trigger would be
+ * offered again as soon as the deload ends, depending on which button started it. Runs inside
+ * the caller's suggestions transaction.
+ */
+async function closeShownDeloads(
+  ctx: Pick<ServiceCtx, 'db'>,
+  startedId: string,
+  now: number,
+): Promise<void> {
+  await ctx.db.suggestions
+    .where('kind')
+    .equals('deload')
+    .filter((s) => s.status === 'shown' && s.id !== startedId)
+    .modify({ status: 'accepted', respondedAt: now })
 }
 
 /**

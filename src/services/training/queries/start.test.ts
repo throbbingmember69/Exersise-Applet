@@ -53,6 +53,8 @@ describe('getStartOptions', () => {
         reasons: [],
         fingerprint: null,
       },
+      // No weigh-ins yet: the seed baseline, as startSession would store it.
+      bodyweight: { weightLb: 163, source: 'seed', stale: false },
     })
   })
 

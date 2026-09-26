@@ -348,6 +348,7 @@ describe('getSessionSummary', () => {
       branch: 'start',
       isDeload: true,
       badge: null,
+      superseded: false,
     })
   })
 
@@ -365,8 +366,9 @@ describe('getSessionSummary', () => {
     await insertSession(c, pull('2026-09-16', 5))
     const last = await insertSession(c, pull('2026-09-23', 6))
     const summary = (await getSessionSummary(c, last))!
-    expect(summary.stalls).toEqual([
+    expect(summary.stalls).toMatchObject([
       {
+        status: null,
         exerciseId: 'ex-weighted-chin-up',
         name: 'Weighted chin-up',
         scope: '*',

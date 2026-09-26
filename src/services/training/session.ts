@@ -1,14 +1,14 @@
 // Logger commands for the one in-progress session: start it (writing its immutable prescription
 // snapshots), log, correct and void sets, swap, add and remove exercises before they have sets,
-// and finish or abandon it. Finished and abandoned sessions change only through Edit mode
+// fix its bodyweight, and finish or abandon it. Finished and abandoned sessions change only through Edit mode
 // (edit.ts); the rules are enforced by db/guards.ts.
 //
 // Suggestions are computed by replaying history through the training model and frozen into each
 // session exercise's snapshot when the session starts. They are never read back by the engine;
 // the next session's suggestion is re-derived from the logged sets.
 import {
-  assertBodyweight,
   assertCanLog,
+  assertKnownBodyweight,
   assertLoad,
   assertNoLoggedSets,
   assertReps,
@@ -23,11 +23,9 @@ import {
   requireSet,
   type SetPatch,
 } from '@/db/guards'
-import { bodyweightOn, buildTrend } from '@/domain/trend'
+import { deloadPrescription } from '@/domain/progression/prefill'
 import type {
-  BodyweightSource,
   Exercise,
-  LocalDate,
   NextPrescription,
   ProgramSlot,
   Regime,
@@ -35,11 +33,11 @@ import type {
   SessionExercise,
   SessionSuggestion,
   SetLog,
-  Settings,
   SwapKind,
 } from '@/domain/types'
 import { today, type ServiceCtx } from '../context'
 import { ServiceError } from '../errors'
+import { resolveSessionBodyweight } from './bodyweight'
 import { loadTrainingModel, type TrainingModel } from './model'
 
 /** appState key of the gym the last session was started at (the start sheet's default). */
@@ -51,9 +49,15 @@ export interface StartSessionInput {
   gymId: string
   /** null = ad hoc session: no program day, no exercises until added. */
   programDayId: string | null
-  /** Defaults to whether an accepted deload is running. */
+  /**
+   * Defaults to whether an accepted deload is running, for a program day. An ad hoc session
+   * defaults to false: it isn't one of the deload cycle's program days.
+   */
   isDeload?: boolean
-  /** Explicit bodyweight (source 'manual'); otherwise same-day weigh-in → trend → seed. */
+  /**
+   * Explicit bodyweight (source 'manual'). Otherwise the start sheet's default
+   * (resolveSessionBodyweight: same-day weigh-in → trend → seed → unknown).
+   */
   bodyweightLb?: number
 }
 
@@ -63,7 +67,7 @@ export interface StartSessionInput {
  */
 export async function startSession(ctx: ServiceCtx, input: StartSessionInput): Promise<string> {
   const { db } = ctx
-  if (input.bodyweightLb !== undefined) assertBodyweight(input.bodyweightLb)
+  checkStartInput(input)
 
   const model = await loadTrainingModel(ctx)
   const current = model.inProgressSession()
@@ -88,11 +92,15 @@ export async function startSession(ctx: ServiceCtx, input: StartSessionInput): P
 
   const now = ctx.now()
   const date = today(ctx)
-  const isDeload = input.isDeload ?? model.deloadState().status.active
+  const isDeload =
+    input.isDeload ?? (input.programDayId !== null && model.deloadState().status.active)
   const bodyweight =
     input.bodyweightLb !== undefined
       ? { weightLb: input.bodyweightLb, source: 'manual' as const }
-      : await resolveBodyweight(ctx, model.settings, date)
+      : resolveSessionBodyweight(
+          { bodyEntries: await db.bodyEntries.toArray(), settings: model.settings },
+          date,
+        )
 
   const sessionId = ctx.newId()
   const programDayId = input.programDayId
@@ -120,6 +128,7 @@ export async function startSession(ctx: ServiceCtx, input: StartSessionInput): P
             regime: slot,
             sets: p.sets,
             suggestion: suggestionOf(p),
+            bodyweightLb: bodyweight.weightLb,
             createdAt: now,
           })
         })
@@ -137,6 +146,7 @@ export async function startSession(ctx: ServiceCtx, input: StartSessionInput): P
     isDeload,
     jointPain: false,
     bodyweightLb: bodyweight.weightLb,
+    // With no bodyweight at all this is 'manual', which means nothing (see SessionBodyweight).
     bodyweightSource: bodyweight.source,
     note: '',
     voidedAt: null,
@@ -159,23 +169,41 @@ export async function startSession(ctx: ServiceCtx, input: StartSessionInput): P
   return sessionId
 }
 
-/**
- * Bodyweight for a new session: the same-day weigh-in, else the trend weight (or the seed
- * baseline before any weigh-in), else unknown (null, for the lifter to enter).
- */
-async function resolveBodyweight(
-  ctx: Pick<ServiceCtx, 'db'>,
-  settings: Settings,
-  date: LocalDate,
-): Promise<{ weightLb: number | null; source: BodyweightSource }> {
-  const entries = await ctx.db.bodyEntries.toArray()
-  for (const e of entries) {
-    const w = e.weightLb
-    if (e.date !== date || e.source !== 'user' || e.voidedAt !== null || w === null) continue
-    if (Number.isFinite(w) && w > 0) return { weightLb: w, source: 'weighin' }
+/** Runtime checks of the start input (a bad value would otherwise be stored as-is). */
+function checkStartInput(input: StartSessionInput): void {
+  if (typeof input.gymId !== 'string') {
+    throw new ServiceError('gym_not_found', 'Pick a gym.', { gymId: input.gymId })
   }
-  const bw = bodyweightOn(buildTrend(entries, settings), entries, date)
-  return bw ? { weightLb: bw.weightLb, source: bw.source } : { weightLb: null, source: 'manual' }
+  if (input.programDayId !== null && typeof input.programDayId !== 'string') {
+    throw new ServiceError('day_not_found', 'Pick a program day.', {
+      programDayId: input.programDayId,
+    })
+  }
+  if (input.isDeload !== undefined && typeof input.isDeload !== 'boolean') {
+    throw new ServiceError('invalid_deload', 'Deload must be yes or no.', {
+      isDeload: input.isDeload,
+    })
+  }
+  if (input.bodyweightLb !== undefined) assertKnownBodyweight(input.bodyweightLb)
+}
+
+/**
+ * Set the in-progress session's bodyweight: the logger's fix for a missing or wrong value. It
+ * becomes a manual bodyweight. Snapshots never change, so a row's 'no_bodyweight' notice stays;
+ * it only matters while the session's bodyweight is still null.
+ */
+export async function setSessionBodyweight(
+  ctx: ServiceCtx,
+  sessionId: string,
+  weightLb: number,
+): Promise<void> {
+  assertKnownBodyweight(weightLb)
+  const { db } = ctx
+  await db.transaction('rw', db.sessions, async () => {
+    assertCanLog(requireSession(await db.sessions.get(sessionId), sessionId))
+    // In-progress changes don't stamp editedAt: that marks changes made in Edit mode.
+    await db.sessions.update(sessionId, { bodyweightLb: weightLb, bodyweightSource: 'manual' })
+  })
 }
 
 // ── Sets ─────────────────────────────────────────────────────────────────────
@@ -287,10 +315,15 @@ export function buildSetLog(
 
 /**
  * One-off swap of a session exercise that has no sets yet (G6). The row is replaced (new id, same
- * order and slot) and its voided sets are dropped: in-progress data isn't history yet. A slot row
- * keeps the slot's regime and gets the new exercise's own track suggestion; an ad hoc row is
- * rebuilt like `addExercise`. Swapping back to the planned exercise restores the plain row.
- * Returns the new session exercise id.
+ * order and slot). A slot row keeps the slot's regime and gets the new exercise's own track
+ * suggestion; an ad hoc row is rebuilt like `addExercise`. Swapping back to the planned exercise
+ * restores the plain row. The new exercise can't already fill another row of the session
+ * ('exercise_in_session'): tracks and series count one entry per row, so a duplicate would count
+ * one session twice. Returns the new session exercise id.
+ *
+ * The row's voided sets are hard-deleted with it. This is the one exception to soft deletes:
+ * sets voided while the session is still in progress are scratch data, not history (DESIGN, lead
+ * changes). Once the session is finished, sets are only ever voided.
  */
 export async function swapExercise(
   ctx: ServiceCtx,
@@ -315,6 +348,11 @@ export async function swapExercise(
       exerciseId: exercise.id,
     })
   }
+  assertNotInSession(
+    model.data.sessionExercises.filter((x) => x.sessionId === session.id),
+    exercise,
+    se.id,
+  )
 
   const slot =
     se.slotId === null ? undefined : model.data.programSlots.find((s) => s.id === se.slotId)
@@ -343,6 +381,7 @@ export async function swapExercise(
       regime,
       sets: p.sets,
       suggestion: suggestionOf(p),
+      bodyweightLb: session.bodyweightLb,
       createdAt: now,
     })
   } else {
@@ -357,11 +396,18 @@ export async function swapExercise(
   }
 
   await db.transaction('rw', [db.sessions, db.sessionExercises, db.setLogs], async () => {
-    // Re-check under the write lock: still in progress, row still there, still no sets.
+    // Re-check under the write lock: still in progress, row still there, still no sets, and the
+    // exercise not added elsewhere meanwhile.
     assertCanLog(requireSession(await db.sessions.get(session.id), session.id))
     const current = requireSessionExercise(await db.sessionExercises.get(se.id), se.id)
+    assertNotInSession(
+      await db.sessionExercises.where('sessionId').equals(session.id).toArray(),
+      exercise,
+      se.id,
+    )
     const sets = await db.setLogs.where('sessionExerciseId').equals(se.id).toArray()
     assertNoLoggedSets(current, sets)
+    // Only voided (scratch) sets are left: they go with the row (see the doc comment).
     await db.setLogs.bulkDelete(sets.map((s) => s.id))
     await db.sessionExercises.delete(se.id)
     await db.sessionExercises.add(replacement)
@@ -372,8 +418,10 @@ export async function swapExercise(
 /**
  * Add a library exercise (a finisher, or anything not on the day) at the end of the in-progress
  * session. Ad hoc rows are logged and count toward volume and strength series but are never
- * evaluated for progression (G4); their suggested load is the last working load of the
- * exercise's strength series at this gym scope. Returns the new session exercise id.
+ * evaluated for progression (G4); their suggested load is the last non-deload working load of
+ * the exercise's strength series at this gym scope, cut like a slot row in a deload session. An
+ * exercise already in the session is refused ('exercise_in_session'): log it in its row.
+ * Returns the new session exercise id.
  */
 export async function addExercise(
   ctx: ServiceCtx,
@@ -388,6 +436,11 @@ export async function addExercise(
   )
   assertCanLog(session)
   const exercise = requireActiveExercise(model.exercise(exerciseId), exerciseId)
+  assertNotInSession(
+    model.data.sessionExercises.filter((x) => x.sessionId === session.id),
+    exercise,
+    null,
+  )
   const id = ctx.newId()
   const row = adHocSnapshot(model, {
     id,
@@ -401,13 +454,17 @@ export async function addExercise(
   await db.transaction('rw', [db.sessions, db.sessionExercises], async () => {
     assertCanLog(requireSession(await db.sessions.get(sessionId), sessionId))
     const rows = await db.sessionExercises.where('sessionId').equals(sessionId).toArray()
+    assertNotInSession(rows, exercise, null)
     const order = rows.reduce((next, r) => Math.max(next, r.order + 1), 0)
     await db.sessionExercises.add({ ...row, order })
   })
   return id
 }
 
-/** Remove an exercise that has no sets from the in-progress session. */
+/**
+ * Remove an exercise that has no sets from the in-progress session. Its voided (scratch) sets are
+ * hard-deleted with it, as in `swapExercise`.
+ */
 export async function removeExercise(ctx: ServiceCtx, sessionExerciseId: string): Promise<void> {
   const { db } = ctx
   await db.transaction('rw', [db.sessions, db.sessionExercises, db.setLogs], async () => {
@@ -482,12 +539,19 @@ interface SnapshotArgs {
   /** Sets actually prescribed (fewer in a deload). */
   sets: number
   suggestion: SessionSuggestion
+  /** The session's bodyweight: a bodyweight-plus row without one gets a 'no_bodyweight' notice. */
+  bodyweightLb: number | null
   createdAt: number
 }
 
 /** The immutable prescription snapshot of one session exercise. */
 function buildSnapshot(model: TrainingModel, a: SnapshotArgs): SessionExercise {
   const { exercise } = a
+  // Without a bodyweight a bodyweight-plus set has no e1RM: the logger asks for one.
+  const suggestion: SessionSuggestion =
+    exercise.loadType === 'bodyweight_plus' && a.bodyweightLb === null
+      ? { ...a.suggestion, notices: [...a.suggestion.notices, { code: 'no_bodyweight' }] }
+      : a.suggestion
   return {
     id: a.id,
     sessionId: a.sessionId,
@@ -512,12 +576,16 @@ function buildSnapshot(model: TrainingModel, a: SnapshotArgs): SessionExercise {
       stepLb: model.stepFor(exercise.id, a.gymId),
     },
     muscleWeights: { ...exercise.muscleWeights },
-    suggestion: a.suggestion,
+    suggestion,
     createdAt: a.createdAt,
   }
 }
 
-/** An ad hoc row: the exercise's default regime and its series' last working load. */
+/**
+ * An ad hoc row: the exercise's default regime and its series' last working load. In a deload
+ * session it gets the same cut as a slot row (deloadPrescription): ceil(sets × fraction) sets and
+ * a whole-step lighter load (a 0% cut keeps the load).
+ */
 function adHocSnapshot(
   model: TrainingModel,
   a: {
@@ -530,34 +598,51 @@ function adHocSnapshot(
     createdAt: number
   },
 ): SessionExercise {
-  const regime = a.exercise.defaultRegime
+  const { exercise, session } = a
+  const regime = exercise.defaultRegime
+  const plain: NextPrescription = {
+    loadLb: lastWorkingLoad(model, exercise.id, session.gymId),
+    repTargets: Array.from({ length: regime.sets }, () => regime.repMin),
+    sets: regime.sets,
+    branch: 'start',
+    missStreakBefore: 0,
+    isCalibration: false,
+    notices: [],
+  }
+  const p = session.isDeload
+    ? deloadPrescription(
+        plain,
+        regime,
+        model.stepFor(exercise.id, session.gymId),
+        exercise.loadType,
+        model.settings,
+      )
+    : plain
   return buildSnapshot(model, {
     id: a.id,
-    sessionId: a.session.id,
+    sessionId: session.id,
     order: a.order,
     slotId: null,
-    exercise: a.exercise,
-    gymId: a.session.gymId,
+    exercise,
+    gymId: session.gymId,
     swapKind: a.swapKind,
     swappedFromExerciseId: a.swappedFromExerciseId,
     regime,
-    sets: regime.sets,
-    suggestion: {
-      loadLb: lastWorkingLoad(model, a.exercise.id, a.session.gymId),
-      repTargets: Array.from({ length: regime.sets }, () => regime.repMin),
-      branch: 'start',
-      missStreakBefore: 0,
-      isCalibration: false,
-      notices: [],
-    },
+    sets: p.sets,
+    suggestion: suggestionOf(p),
+    bodyweightLb: session.bodyweightLb,
     createdAt: a.createdAt,
   })
 }
 
-/** The most recent working-set load of an exercise's strength series at a gym, if any. */
+/**
+ * The most recent working-set load of an exercise's strength series at a gym, if any. Deload
+ * sessions are skipped: their loads are cut by design.
+ */
 function lastWorkingLoad(model: TrainingModel, exerciseId: string, gymId: string): number | null {
   const sessions = model.seriesSessions(exerciseId, model.scopeFor(exerciseId, gymId))
   for (let i = sessions.length - 1; i >= 0; i--) {
+    if (sessions[i]!.isDeload) continue
     const last = sessions[i]!.sets.at(-1)
     if (last) return last.loadLb
   }
@@ -605,6 +690,26 @@ function regimeOf(r: Regime): Regime {
     rirMax: r.rirMax,
     restMinSec: r.restMinSec,
     restMaxSec: r.restMaxSec,
+  }
+}
+
+/**
+ * A session holds an exercise at most once (a row other than `exceptRowId` is refused): the
+ * training model replays one track or series entry per row, so a duplicate would count one
+ * session twice (a single session's misses could trigger the two-miss drop).
+ */
+function assertNotInSession(
+  rows: readonly SessionExercise[],
+  exercise: Exercise,
+  exceptRowId: string | null,
+): void {
+  const other = rows.find((r) => r.exerciseId === exercise.id && r.id !== exceptRowId)
+  if (other) {
+    throw new ServiceError(
+      'exercise_in_session',
+      `${exercise.name} is already in this session. Log it in its row.`,
+      { exerciseId: exercise.id, sessionExerciseId: other.id },
+    )
   }
 }
 

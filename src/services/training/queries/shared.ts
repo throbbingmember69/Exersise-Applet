@@ -1,11 +1,12 @@
 // Shared plumbing for the training read side: one consistent read of everything the views need,
 // history indexes, as-of models, and small view helpers. Query functions run inside
 // dexie-react-hooks `useLiveQuery`, so this module only awaits Dexie reads and never writes.
-import { compareLocalDate } from '@/domain/dates'
+import { compareLocalDate, isLocalDate, localDateOf } from '@/domain/dates'
 import type { DeloadReason } from '@/domain/deload'
 import { compareMetric, sessionMetric, type MetricKind, type MetricValue } from '@/domain/e1rm'
 import { gymScope } from '@/domain/progression/keys'
 import type {
+  BodyEntry,
   Gym,
   GymScope,
   LoadType,
@@ -16,9 +17,12 @@ import type {
   Session,
   SessionExercise,
   SetLog,
+  Suggestion,
+  SuggestionStatus,
 } from '@/domain/types'
 import { SHARED_GYM_SCOPE } from '@/domain/types'
 import type { ServiceCtx } from '../../context'
+import { ServiceError } from '../../errors'
 import { getAppState } from '../../settings'
 import {
   isCountedSession,
@@ -46,10 +50,19 @@ export interface QueryData {
   muscles: readonly Muscle[]
   /** Raw appState 'lastGymId' value (may be stale or missing). */
   lastGymSetting: unknown
+  /** Body log entries: only read when asked for (`loadQueryData(ctx, { bodyEntries: true })`). */
+  bodyEntries: readonly BodyEntry[]
   index: HistoryIndex
 }
 
-export async function loadQueryData(ctx: Pick<ServiceCtx, 'db'>): Promise<QueryData> {
+/**
+ * One consistent read of everything the training views need. The body log is read only on
+ * request, so live queries that don't need it don't re-run on every weigh-in.
+ */
+export async function loadQueryData(
+  ctx: Pick<ServiceCtx, 'db'>,
+  opts: { bodyEntries?: boolean } = {},
+): Promise<QueryData> {
   const { db } = ctx
   const raw = await db.transaction(
     'r',
@@ -68,15 +81,25 @@ export async function loadQueryData(ctx: Pick<ServiceCtx, 'db'>): Promise<QueryD
       db.gyms,
       db.muscles,
       db.appState,
+      db.bodyEntries,
     ],
     async () => ({
       data: await loadTrainingData(ctx),
       gyms: await db.gyms.orderBy('sortOrder').toArray(),
       muscles: await db.muscles.orderBy('sortOrder').toArray(),
       lastGymSetting: await getAppState<unknown>(ctx, LAST_GYM_KEY),
+      bodyEntries: opts.bodyEntries ? await db.bodyEntries.toArray() : [],
     }),
   )
   return { ...raw, model: new TrainingModel(raw.data), index: new HistoryIndex(raw.data) }
+}
+
+/** A query's date argument, checked: ServiceError 'invalid_date' unless a real YYYY-MM-DD. */
+export function queryDate(value: unknown, label: string): LocalDate {
+  if (typeof value !== 'string' || !isLocalDate(value)) {
+    throw new ServiceError('invalid_date', `${label} must be a date (YYYY-MM-DD).`, { value })
+  }
+  return value
 }
 
 /** (date, startedAt) order: the order history is replayed in. */
@@ -87,11 +110,24 @@ export function compareSessions(
   return compareLocalDate(a.date, b.date) || a.startedAt - b.startedAt
 }
 
-/** A model that only sees sessions dated on or before `asOf`. */
+/**
+ * A model that sees history as it stood at the end of `asOf`: sessions dated on or before it,
+ * and the suggestion log as of that day. Rows first shown later are left out, and answers given
+ * later are undone (the row is still 'shown'), so a deload accepted after `asOf` isn't running
+ * yet. Instants map to days in local time, as session dates do.
+ */
 export function modelAsOf(data: TrainingData, asOf: LocalDate): TrainingModel {
+  const byEndOf = (ms: number) => compareLocalDate(localDateOf(ms), asOf) <= 0
   return new TrainingModel({
     ...data,
     sessions: data.sessions.filter((s) => compareLocalDate(s.date, asOf) <= 0),
+    suggestions: data.suggestions.flatMap((s): Suggestion[] => {
+      if (!byEndOf(s.firstShownAt)) return []
+      if (s.respondedAt !== null && !byEndOf(s.respondedAt)) {
+        return [{ ...s, status: 'shown', respondedAt: null }]
+      }
+      return [s]
+    }),
   })
 }
 
@@ -272,6 +308,14 @@ export function deloadView(model: TrainingModel): DeloadView {
 }
 
 export interface StallView {
+  /**
+   * Suggestion-log key (kind 'stall') for recordShown / respondSuggestion:
+   * `stall;${seriesKey};since=${sinceSessionId}`. A stall that clears and comes back later starts
+   * at another session, so it gets a new key and is shown again.
+   */
+  key: string
+  /** This stall's status in the suggestion log: null until recorded. Answered stalls are hidden. */
+  status: SuggestionStatus | null
   exerciseId: string
   name: string
   scope: GymScope
@@ -280,15 +324,40 @@ export interface StallView {
   since: LocalDate | null
 }
 
+/** The suggestion-log key of a stall flag. */
+export function stallKey(flag: Pick<StallFlag, 'seriesKey' | 'result'>): string {
+  return `stall;${flag.seriesKey};since=${flag.result.sinceSessionId ?? ''}`
+}
+
 export function stallView(q: QueryData, model: TrainingModel, flag: StallFlag): StallView {
   const sinceId = flag.result.sinceSessionId
+  const key = stallKey(flag)
+  const logged = model.data.suggestions.find((s) => s.kind === 'stall' && s.key === key)
   return {
+    key,
+    status: logged?.status ?? null,
     exerciseId: flag.exerciseId,
     name: model.exercise(flag.exerciseId)?.name ?? flag.exerciseId,
     scope: flag.scope,
     gymName: scopeGymName(q.gyms, flag.scope),
     since: sinceId === null ? null : (q.index.sessions.get(sinceId)?.date ?? null),
   }
+}
+
+/**
+ * The model's stalled series as cards, leaving out stalls the lifter already accepted or
+ * dismissed (by their suggestion-log key, in the model's own suggestion log).
+ */
+export function openStallViews(
+  q: QueryData,
+  model: TrainingModel,
+  keep: (flag: StallFlag) => boolean = () => true,
+): StallView[] {
+  return model
+    .stallFlags()
+    .filter((f) => f.result.stalled && keep(f))
+    .map((f) => stallView(q, model, f))
+    .filter((v) => v.status === null || v.status === 'shown')
 }
 
 /** The metric kind and rep floor an exercise's series uses (snapshot values if it's gone). */
