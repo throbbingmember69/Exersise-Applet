@@ -84,6 +84,17 @@ export function toLocalDate(value: unknown, label = 'Date'): LocalDate {
   return value
 }
 
+/** Refuse a date after `todayDate` (logs, phase starts and ends can't be dated in the future). */
+export function checkNotFuture(date: LocalDate, todayDate: LocalDate, label = 'Date'): LocalDate {
+  if (compareLocalDate(date, todayDate) > 0) {
+    throw new ServiceError('future_date', `${label} can't be after today (${todayDate})`, {
+      value: date,
+      today: todayDate,
+    })
+  }
+  return date
+}
+
 // ── Data and model ──────────────────────────────────────────────────────────
 
 /** Every row the nutrition services read, from one consistent snapshot. */
@@ -134,6 +145,13 @@ function byEffective(a: TargetRevision, b: TargetRevision): number {
   return compareLocalDate(a.effectiveDate, b.effectiveDate) || a.createdAt - b.createdAt
 }
 
+/** Check-in statuses the user answered (their week is history the phase can't be cut short of). */
+const ANSWERED: ReadonlySet<CheckIn['status']> = new Set(['accepted', 'accepted_steps', 'skipped'])
+
+function laterDate(a: LocalDate, b: LocalDate): LocalDate {
+  return compareLocalDate(a, b) >= 0 ? a : b
+}
+
 /** Derived nutrition state (trend, maintenance, targets, phases), memoized per snapshot. */
 export class NutritionModel {
   readonly settings: Settings
@@ -147,11 +165,19 @@ export class NutritionModel {
   private readonly checkInsByPhase = new Map<string, CheckIn[]>()
   private readonly measuredCache = new Map<LocalDate, MeasuredTdee | null>()
   private readonly bodyFatCache = new Map<LocalDate, SmoothedBodyFat | null>()
+  private readonly trendAsOfCache = new Map<LocalDate, readonly TrendPoint[]>()
+  /** Latest date of any body entry (null without entries). */
+  private readonly lastBodyDate: LocalDate | null
 
   constructor(readonly data: NutritionData) {
     this.settings = data.settings
     this.profile = data.profile
     this.trend = buildTrend(data.bodyEntries, data.settings)
+    this.lastBodyDate =
+      data.bodyEntries
+        .map((e) => e.date)
+        .sort(compareLocalDate)
+        .at(-1) ?? null
     this.weighInDates = weighInDates(data.bodyEntries)
     this.phases = [...data.phases].sort(byStartDate)
     for (const r of data.targetRevisions) {
@@ -227,6 +253,34 @@ export class NutritionModel {
     return activeTargetOn(this.revisionsOf(phase.id), date)
   }
 
+  /**
+   * The last date a phase's history is committed through: its start, its latest answered
+   * check-in's due date or its latest target revision's effective date, whichever is later. The
+   * phase can't end before it, so a following phase must start after it.
+   */
+  committedThrough(phase: Phase): LocalDate {
+    let last = phase.startDate
+    for (const c of this.checkInsOf(phase.id)) {
+      if (ANSWERED.has(c.status)) last = laterDate(last, c.dueDate)
+    }
+    for (const r of this.revisionsOf(phase.id)) last = laterDate(last, r.effectiveDate)
+    return last
+  }
+
+  /**
+   * The earliest start date for a new phase: after the active phase's committed history, else
+   * after the last phase's end. Null before any phase (the first one may be backdated freely).
+   */
+  earliestStartDate(): LocalDate | null {
+    const active = this.activePhase()
+    if (active) return addDays(this.committedThrough(active), 1)
+    const last = this.phases
+      .map((p) => p.endDate ?? p.startDate)
+      .sort(compareLocalDate)
+      .at(-1)
+    return last === undefined ? null : addDays(last, 1)
+  }
+
   /** Trend weight on a date, else the seed baseline (before any real weigh-in), else null. */
   weightOn(date: LocalDate): Bodyweight | null {
     return domainBodyweightOn(this.trend, this.data.bodyEntries, date)
@@ -234,6 +288,23 @@ export class NutritionModel {
 
   trendOn(date: LocalDate): TrendValue | null {
     return trendOn(this.trend, date)
+  }
+
+  /**
+   * The trend as it stood on `date`: built only from body entries dated on or before it, so a
+   * later reading can't fill in (interpolate) the days up to `date`. Used for as-of evaluations.
+   */
+  trendAsOf(date: LocalDate): readonly TrendPoint[] {
+    if (this.lastBodyDate === null || compareLocalDate(this.lastBodyDate, date) <= 0) {
+      return this.trend
+    }
+    let trend = this.trendAsOfCache.get(date)
+    if (!trend) {
+      const upTo = this.data.bodyEntries.filter((e) => compareLocalDate(e.date, date) <= 0)
+      trend = buildTrend(upTo, this.settings)
+      this.trendAsOfCache.set(date, trend)
+    }
+    return trend
   }
 
   /** Smoothed body fat on a date (or the single-reading fallback). */
@@ -244,9 +315,14 @@ export class NutritionModel {
     return this.bodyFatCache.get(date) ?? null
   }
 
-  /** Formula maintenance on a date from trend weight (or `fallbackWeightLb`), body fat and age. */
+  /**
+   * Formula maintenance on a date from the trend weight as of that date (or `fallbackWeightLb`),
+   * body fat and age.
+   */
   formulaOn(date: LocalDate, fallbackWeightLb: number | null = null): FormulaTdee | null {
-    const weightLb = this.weightOn(date)?.weightLb ?? fallbackWeightLb
+    const weightLb =
+      domainBodyweightOn(this.trendAsOf(date), this.data.bodyEntries, date)?.weightLb ??
+      fallbackWeightLb
     const profile = this.profile
     if (weightLb === null || !profile) return null
     return formulaTdee(
@@ -261,7 +337,10 @@ export class NutritionModel {
     )
   }
 
-  /** Measured maintenance over the window ending on `date` (every phase start is a disruption). */
+  /**
+   * Measured maintenance over the window ending on `date` (every phase start is a disruption),
+   * from the data as it stood on `date`.
+   */
   measuredOn(date: LocalDate): MeasuredTdee | null {
     if (!this.measuredCache.has(date)) {
       this.measuredCache.set(
@@ -271,7 +350,7 @@ export class NutritionModel {
             asOf: date,
             intake: this.data.nutritionEntries,
             weighInDates: this.weighInDates,
-            trend: this.trend,
+            trend: this.trendAsOf(date),
             disruptions: this.phases.map((p) => p.startDate),
           },
           this.settings,
@@ -282,14 +361,18 @@ export class NutritionModel {
   }
 
   /**
-   * The maintenance-estimate timeline of a phase at its check-in due dates up to `upTo` (and up to
-   * its end), plus `upTo` itself when `includeUpTo`. A phase that started from a measured
-   * maintenance carries it in, so later measurements are capped against it.
+   * The maintenance-estimate timeline of a phase: one checkpoint on the last day of each completed
+   * phase week (the day before its check-in is due, so a check-in never counts the partly logged
+   * due date) up to `upTo` (and up to the phase's end), plus `upTo` itself when `includeUpTo`. A
+   * phase that started from a measured maintenance carries it in, so later measurements are
+   * capped against it.
    */
   phaseTimeline(phase: Phase, upTo: LocalDate, includeUpTo = false): TdeePoint[] {
     const end =
       phase.endDate !== null && compareLocalDate(phase.endDate, upTo) < 0 ? phase.endDate : upTo
-    const dates = checkinSchedule(phase.startDate, end).map((w) => w.dueDate)
+    const dates = checkinSchedule(phase.startDate, addDays(end, 1)).map((w) =>
+      addDays(w.dueDate, -1),
+    )
     const last = dates.at(-1)
     if (includeUpTo && (!last || compareLocalDate(last, upTo) < 0)) dates.push(upTo)
     const checkpoints: TdeeCheckpoint[] = dates.map((date) => ({
@@ -613,6 +696,11 @@ export interface PhaseView {
   prompt: PhasePromptView | null
   /** What the flowchart suggests next (a lean bulk when no phase exists). */
   suggestedNextType: PhaseType
+  /**
+   * The earliest date the active phase can end (its latest answered check-in or target change);
+   * the latest is today. Null without an active phase.
+   */
+  earliestEndDate: LocalDate | null
 }
 
 /** The active phase: progress, targets, maintenance estimates and any switch prompt. */
@@ -659,6 +747,7 @@ export async function getPhaseView(
           }
         : null,
     suggestedNextType: model.suggestedNextType(phase ?? model.phases.at(-1) ?? null),
+    earliestEndDate: phase ? model.committedThrough(phase) : null,
   }
 }
 

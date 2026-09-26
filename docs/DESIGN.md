@@ -25,6 +25,14 @@
 >   - The summary's `next` is what followed that session (`superseded: true` if the track has moved on).
 >   - Stall cards carry `key`/`status` for the suggestion log, and dismissed ones are hidden. Stalls count only exercises still in an active slot.
 >   - Session detail lists `voidedSets` for Edit-mode restore.
+> - **Nutrition services after the M2 review:**
+>   - **Dates:** body, intake and phase dates can't be in the future (`future_date`). A new phase or phase end can't predate the active phase's answered check-ins or target changes (`invalid_start_date` / `invalid_end_date`). Only the first phase may be backdated.
+>   - **Target changes:** a change can't be dated before an existing later-dated one (`later_target_exists`). Accepting a check-in re-checks it first (`stale_checkin` if a manual change made it moot).
+>   - **Check-in evaluation:** each week is evaluated only with data up to its due date. Intake coverage and measured maintenance use the completed week, dueDate − 7 through dueDate − 1, and proposals use the day before the start. `syncCheckIns` clamps `asOf` to today.
+>   - **Weigh-ins:** the first real weigh-in is checked against the seed baseline. Re-entering a voided date restores and patches that row.
+>   - **Prompts:** a dismissed prompt stays dismissed only while it is unchanged.
+>   - **Proposals:** `proposePhase` accepts an edited `rateMinPct`/`rateMaxPct`/`targetRatePct`.
+>   - **Intake:** kcal above 15,000 is refused (`implausible_kcal`).
 
 # Implementation plan: Exersise Applet (offline-first Android PWA)
 

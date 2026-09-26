@@ -1,14 +1,16 @@
 // Body log commands: daily weigh-ins and weekly smart-scale readings (one BodyEntry per date).
-// Body entries are editable in place (finding #2). A weigh-in more than weighInConfirmDeviationPct
-// from the trend on its date needs confirming first (typo guard). A user weigh-in on the seed
-// baseline's date takes that row over (source 'user'), keeping its scale fields. Voiding is a
-// soft delete; a voided date is re-entered as a fresh entry.
-import { buildTrend, trendOn } from '@/domain/trend'
+// Body entries are editable in place (finding #2) and can't be dated after today. A weigh-in more
+// than weighInConfirmDeviationPct from the reference weight on its date needs confirming first
+// (typo guard): the trend, or the seed baseline before any real weigh-in (G9), so the first
+// reading (the trend's T0) is checked too. A user weigh-in on the seed baseline's date takes that
+// row over (source 'user'), keeping its scale fields. Voiding is a soft delete; re-entering a
+// voided date restores that row and applies the new values on top (its other fields are kept).
+import { bodyweightOn, buildTrend } from '@/domain/trend'
 import type { BodyEntry, LocalDate } from '@/domain/types'
-import type { ServiceCtx } from '../context'
+import { today, type ServiceCtx } from '../context'
 import { ServiceError } from '../errors'
 import { loadSettings } from '../settings'
-import { toLocalDate } from './queries'
+import { checkNotFuture, toLocalDate } from './queries'
 
 type Measurements = Pick<
   BodyEntry,
@@ -50,14 +52,16 @@ export type WeighInResult =
   | { status: 'saved' }
   | {
       status: 'needs_confirm'
+      /** The reference weight: the trend, or the seed baseline before any real weigh-in. */
       trendLb: number
-      /** Signed % difference from the trend (positive = above). */
+      weightSource: 'trend' | 'seed'
+      /** Signed % difference from the reference (positive = above). */
       deviationPct: number
     }
 
 /** Save the day's weight (upsert by date). Asks for confirmation when far from the trend. */
 export async function saveWeighIn(ctx: ServiceCtx, input: WeighInInput): Promise<WeighInResult> {
-  const date = toLocalDate(input.date)
+  const date = checkNotFuture(toLocalDate(input.date), today(ctx))
   const weightLb = checkValue('weightLb', input.weightLb)
   if (!input.confirmed) {
     const check = await typoCheck(ctx, date, weightLb)
@@ -81,7 +85,7 @@ export async function saveScaleReading(
   ctx: ServiceCtx,
   input: ScaleReadingInput,
 ): Promise<WeighInResult> {
-  const date = toLocalDate(input.date)
+  const date = checkNotFuture(toLocalDate(input.date), today(ctx))
   const patch: Partial<Measurements> = {}
   for (const key of MEASUREMENT_KEYS) {
     const value = input[key]
@@ -136,8 +140,9 @@ function checkValue(key: keyof Measurements, value: unknown): number {
 }
 
 /**
- * Compare a reading with the trend on its date, built without that date's own entry (so editing
- * a day compares against the other days). No trend yet → no check.
+ * Compare a reading with the reference weight on its date: the trend, else the seed baseline
+ * (before any real weigh-in), both without that date's own entry (so editing a day compares
+ * against the other days). No reference → no check.
  */
 async function typoCheck(
   ctx: Pick<ServiceCtx, 'db'>,
@@ -149,17 +154,17 @@ async function typoCheck(
   if (current && current.source === 'user' && current.voidedAt === null) {
     if (current.weightLb === weightLb) return null
   }
-  const trend = trendOn(
-    buildTrend(
-      entries.filter((e) => e.date !== date),
-      settings,
-    ),
-    date,
-  )
-  if (!trend) return null
-  const deviationPct = ((weightLb - trend.trendLb) / trend.trendLb) * 100
+  const others = entries.filter((e) => e.date !== date)
+  const reference = bodyweightOn(buildTrend(others, settings), others, date)
+  if (!reference) return null
+  const deviationPct = ((weightLb - reference.weightLb) / reference.weightLb) * 100
   if (Math.abs(deviationPct) <= settings.weighInConfirmDeviationPct) return null
-  return { status: 'needs_confirm', trendLb: trend.trendLb, deviationPct }
+  return {
+    status: 'needs_confirm',
+    trendLb: reference.weightLb,
+    weightSource: reference.source,
+    deviationPct,
+  }
 }
 
 function blankEntry(date: LocalDate, now: number): BodyEntry {
@@ -181,7 +186,8 @@ function blankEntry(date: LocalDate, now: number): BodyEntry {
 
 /**
  * Upsert the entry on `date`. `claimsWeight`: the user set (or cleared) the weight, so a seed row
- * becomes theirs. A voided row is replaced by a fresh entry.
+ * becomes theirs. A voided row is restored and patched, never replaced by a blank entry (its
+ * other fields, such as the seed baseline's scale reading, are kept).
  */
 async function writeEntry(
   ctx: ServiceCtx,
@@ -193,7 +199,7 @@ async function writeEntry(
   const now = ctx.now()
   await db.transaction('rw', db.bodyEntries, async () => {
     const existing = await db.bodyEntries.get(date)
-    const base = existing && existing.voidedAt === null ? existing : blankEntry(date, now)
+    const base: BodyEntry = existing ? { ...existing, voidedAt: null } : blankEntry(date, now)
     const next: BodyEntry = {
       ...base,
       ...patch,

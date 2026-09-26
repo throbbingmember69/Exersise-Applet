@@ -1,10 +1,14 @@
 // Daily intake commands. A NutritionEntry is the day's running total, editable all day (finding
 // #2): saves are patches (omitted fields kept, null clears). kcal is what counts a day as logged
-// for maintenance and check-ins; macros and steps are optional (finding #53).
+// for maintenance and check-ins; macros and steps are optional (finding #53). Entries can't be
+// dated after today, and a daily kcal above MAX_DAILY_KCAL is refused as a typo.
 import type { LocalDate, NutritionEntry } from '@/domain/types'
-import type { ServiceCtx } from '../context'
+import { today, type ServiceCtx } from '../context'
 import { ServiceError } from '../errors'
-import { toLocalDate } from './queries'
+import { checkNotFuture, toLocalDate } from './queries'
+
+/** Typo guard for a day's kcal (a sanity bound, not a tunable engine value). */
+export const MAX_DAILY_KCAL = 15000
 
 type IntakeFields = Pick<NutritionEntry, 'kcal' | 'proteinG' | 'carbsG' | 'fatG' | 'steps'>
 
@@ -34,7 +38,7 @@ export async function saveIntake(
   ctx: ServiceCtx,
   input: IntakeInput,
 ): Promise<NutritionEntry | null> {
-  const date = toLocalDate(input.date)
+  const date = checkNotFuture(toLocalDate(input.date), today(ctx))
   const patch: Partial<IntakeFields> = {}
   for (const key of FIELDS) {
     const value = input[key]
@@ -83,6 +87,13 @@ function checkValue(key: keyof IntakeFields, value: unknown): number {
   }
   if (key === 'steps' && !Number.isInteger(value)) {
     throw new ServiceError('invalid_steps', 'Steps must be a whole number', { value })
+  }
+  if (key === 'kcal' && value > MAX_DAILY_KCAL) {
+    throw new ServiceError(
+      'implausible_kcal',
+      `Calories must be ${MAX_DAILY_KCAL.toLocaleString('en-US')} or less for a day`,
+      { value, max: MAX_DAILY_KCAL },
+    )
   }
   return value
 }

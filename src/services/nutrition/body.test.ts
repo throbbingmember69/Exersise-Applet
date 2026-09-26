@@ -5,12 +5,17 @@ import type { LocalDate } from '@/domain/types'
 import { DEFAULT_SETTINGS } from '@/domain/settings/registry'
 import { SEED_BODY_ENTRY, SEED_DATE, SEED_EPOCH_MS } from '@/seed'
 import { createTestCtx } from '../context'
+
 import { isServiceError } from '../errors'
 import { restoreBodyEntry, saveScaleReading, saveWeighIn, voidBodyEntry } from './body'
 
+/** 2027-01-01 noon UTC: later than any date these tests write. */
+const LATER_THAN_TEST_DATES = Date.UTC(2027, 0, 1, 12)
+
 const ctxs: ReturnType<typeof createTestCtx>[] = []
 function ctx(opts?: Parameters<typeof createTestCtx>[0]) {
-  const c = createTestCtx(opts)
+  // Clock after every test date: entries dated after today are refused.
+  const c = createTestCtx({ startMs: LATER_THAN_TEST_DATES, ...opts })
   ctxs.push(c)
   return c
 }
@@ -83,9 +88,16 @@ describe('saveWeighIn', () => {
     })
   })
 
-  it('does not check the first weigh-in: there is no trend yet (the seed baseline is not a trend)', async () => {
+  it('checks the first weigh-in against the seed baseline (it becomes the trend’s start)', async () => {
     const c = ctx()
-    expect(await saveWeighIn(c, { date: D('2026-09-25'), weightLb: 180 })).toEqual({
+    // 136.3 typed for 163.6: 16% under the 163 lb baseline → confirm first.
+    expect(await saveWeighIn(c, { date: D('2026-09-25'), weightLb: 136.3 })).toMatchObject({
+      status: 'needs_confirm',
+      trendLb: 163,
+    })
+    expect(await c.db.bodyEntries.get(D('2026-09-25'))).toBeUndefined()
+    // Within 3% of the baseline: saved straight away.
+    expect(await saveWeighIn(c, { date: D('2026-09-25'), weightLb: 163.6 })).toEqual({
       status: 'saved',
     })
   })
@@ -251,14 +263,26 @@ describe('voidBodyEntry / restoreBodyEntry', () => {
     expect((await c.db.bodyEntries.get(day))?.weightLb).toBe(163.4)
   })
 
-  it('re-enters a voided date as a fresh entry', async () => {
+  it('re-entering a voided date restores that row and patches it (nothing is lost)', async () => {
     const c = ctx()
     await saveScaleReading(c, { date: '2026-09-25', weightLb: 163, bodyFatPct: 15 })
     await voidBodyEntry(c, '2026-09-25')
     await saveWeighIn(c, { date: '2026-09-25', weightLb: 164 })
     expect(await c.db.bodyEntries.get(D('2026-09-25'))).toMatchObject({
       weightLb: 164,
-      bodyFatPct: null,
+      bodyFatPct: 15,
+      voidedAt: null,
+    })
+  })
+
+  it('keeps the seed baseline’s body fat through a typo, void and re-entry on the seed date', async () => {
+    const c = ctx()
+    await saveWeighIn(c, { date: SEED_DATE, weightLb: 136.3, confirmed: true })
+    await voidBodyEntry(c, SEED_DATE)
+    await saveWeighIn(c, { date: SEED_DATE, weightLb: 163.4 })
+    expect(await c.db.bodyEntries.get(SEED_DATE)).toMatchObject({
+      weightLb: 163.4,
+      bodyFatPct: 14.3,
       voidedAt: null,
     })
   })
