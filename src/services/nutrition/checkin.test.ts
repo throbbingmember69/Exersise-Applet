@@ -2,15 +2,20 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { addDays, parseLocalDate } from '@/domain/dates'
 import type { BodyEntry, CheckIn, LocalDate, NutritionEntry, PhaseType } from '@/domain/types'
 import { createTestCtx } from '../context'
+
 import { isServiceError } from '../errors'
 import { insertSession } from '../training/testFixtures'
 import { respondCheckIn, respondSwitchPrompt, syncCheckIns } from './checkin'
 import { proposePhase, setManualTarget, startPhase } from './phase'
 import { getCheckInView, getPhaseView, getTodayNutrition } from './queries'
 
+/** 2027-01-01 noon UTC: later than any date these tests write. */
+const LATER_THAN_TEST_DATES = Date.UTC(2027, 0, 1, 12)
+
 const ctxs: ReturnType<typeof createTestCtx>[] = []
 function ctx() {
-  const c = createTestCtx()
+  // Clock after every test date: entries dated after today are refused.
+  const c = createTestCtx({ startMs: LATER_THAN_TEST_DATES })
   ctxs.push(c)
   return c
 }
@@ -359,7 +364,8 @@ describe('backfilled vs pending', () => {
     expect(first.pending?.intakeLoggedPct).toBe(0)
     expect((await sync(c, day(7))).updated).toBe(0) // nothing changed → no write
 
-    await logIntake(c, day(1), 7, 3000)
+    // Week 1 is days 0–6 (the due date, day 7, starts week 2).
+    await logIntake(c, day(0), 7, 3000)
     c.advance(1000)
     const again = await sync(c, day(7))
     expect(again.updated).toBe(1)
@@ -386,7 +392,7 @@ describe('maintenance estimate at check-ins', () => {
     const c = ctx()
     await logWeights(c, day(-7), 50, () => 163)
     await logIntake(c, day(0), 22, 3000)
-    await logIntake(c, day(22), 7, 3500)
+    await logIntake(c, day(22), 7, 4000)
     await start(c, 'bulk')
     await sync(c, day(28))
     const [w1, w2, w3, w4] = await rows(c)
@@ -396,14 +402,16 @@ describe('maintenance estimate at check-ins', () => {
     // Week 3: the first window starting a week after the phase start: measured 3,000, uncapped.
     expect(w3).toMatchObject({ tdeeSource: 'measured', tdeeEstimate: 3000, tdeeCapped: false })
     expect(w3).toMatchObject({ intakeLoggedPct: 100, weighInLoggedPct: 100 })
-    // Week 4: 21-day mean 3,166.7 → capped at +150 over the previous estimate.
+    // Week 4 (window through day 27, the last completed day): 21-day mean
+    // (15 × 3,000 + 6 × 4,000) / 21 = 3,285.7 → capped at +150 over the previous estimate.
     expect(w4).toMatchObject({ tdeeSource: 'measured', tdeeEstimate: 3150, tdeeCapped: true })
 
     // The next phase starts from the measured estimate instead of the formula.
     const next = await proposePhase(c, { type: 'maintenance', startDate: day(29) })
     expect(next.maintenance.source).toBe('measured')
-    expect(next.maintenance.kcal).toBeCloseTo(3175, 9) // 20 logged days: (13×3,000 + 7×3,500) / 20
-    expect(next.proposal.kcal).toBe(3200)
+    // As of day 28 (the day before the start): the capped timeline, 3,150 + 150.
+    expect(next.maintenance.kcal).toBe(3300)
+    expect(next.proposal.kcal).toBe(3300)
   })
 })
 

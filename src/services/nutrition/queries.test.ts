@@ -5,6 +5,7 @@ import { buildTrend, weeklyRatePct } from '@/domain/trend'
 import type { LocalDate } from '@/domain/types'
 import { SEED_BODY_ENTRY, SEED_DATE } from '@/seed'
 import { createTestCtx } from '../context'
+
 import { isServiceError } from '../errors'
 import { saveWeighIn, voidBodyEntry } from './body'
 import { respondCheckIn, syncCheckIns } from './checkin'
@@ -19,9 +20,13 @@ import {
   macroMismatch,
 } from './queries'
 
+/** 2027-01-01 noon UTC: later than any date these tests write. */
+const LATER_THAN_TEST_DATES = Date.UTC(2027, 0, 1, 12)
+
 const ctxs: ReturnType<typeof createTestCtx>[] = []
 function ctx() {
-  const c = createTestCtx()
+  // Clock after every test date: entries dated after today are refused.
+  const c = createTestCtx({ startMs: LATER_THAN_TEST_DATES })
   ctxs.push(c)
   return c
 }
@@ -100,6 +105,7 @@ describe('getTodayNutrition', () => {
   it('uses the phase in effect on the date, including an ended one', async () => {
     const c = ctx()
     const first = await startBulk(c)
+    setToday(c, day(140)) // phases start on their start date
     await startPhase(c, {
       type: 'maintenance',
       startDate: day(140),
@@ -269,6 +275,7 @@ describe('getPhaseHistory', () => {
     const bulk = await startBulk(c)
     setToday(c, day(30))
     await setManualTarget(c, { effectiveDate: day(30), kcal: 3150 })
+    setToday(c, day(140)) // phases start on their start date
     const maint = await startPhase(c, {
       type: 'maintenance',
       startDate: day(140),
@@ -276,6 +283,7 @@ describe('getPhaseHistory', () => {
       proteinG: 150,
       fatPct: 25,
     })
+    setToday(c, day(167)) // a phase is ended on (or after) its end date
     await endPhase(c, { date: day(167), reason: 'done' })
     const history = await getPhaseHistory(c)
     expect(history.map((h) => h.phase.id)).toEqual([maint, bulk])

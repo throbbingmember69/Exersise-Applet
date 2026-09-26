@@ -1,12 +1,17 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseLocalDate } from '@/domain/dates'
 import { createTestCtx } from '../context'
+
 import { isServiceError } from '../errors'
 import { clearIntake, saveIntake } from './intake'
 
+/** 2027-01-01 noon UTC: later than any date these tests write. */
+const LATER_THAN_TEST_DATES = Date.UTC(2027, 0, 1, 12)
+
 const ctxs: ReturnType<typeof createTestCtx>[] = []
 function ctx() {
-  const c = createTestCtx()
+  // Clock after every test date: entries dated after today are refused.
+  const c = createTestCtx({ startMs: LATER_THAN_TEST_DATES })
   ctxs.push(c)
   return c
 }

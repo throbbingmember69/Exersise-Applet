@@ -4,14 +4,19 @@ import { roundToStep } from '@/domain/rounding'
 import type { BodyEntry, LocalDate, NutritionEntry, PhaseType } from '@/domain/types'
 import { SEED_DATE } from '@/seed'
 import { createTestCtx } from '../context'
+
 import { isServiceError } from '../errors'
 import { syncCheckIns } from './checkin'
 import { endPhase, proposePhase, setManualTarget, startPhase } from './phase'
 import { getTodayNutrition } from './queries'
 
+/** 2027-01-01 noon UTC: later than any date these tests write. */
+const LATER_THAN_TEST_DATES = Date.UTC(2027, 0, 1, 12)
+
 const ctxs: ReturnType<typeof createTestCtx>[] = []
 function ctx() {
-  const c = createTestCtx()
+  // Clock after every test date: entries dated after today are refused.
+  const c = createTestCtx({ startMs: LATER_THAN_TEST_DATES })
   ctxs.push(c)
   return c
 }
@@ -67,6 +72,8 @@ async function logDays(c: Ctx, from: LocalDate, days: number, weightLb: number, 
 }
 
 async function start(c: Ctx, type: PhaseType, startDate: LocalDate, extra = {}) {
+  // A phase is started on (or after) its start date: never a future-dated start.
+  if (c.now() < noonOf(startDate)) setToday(c, startDate)
   const view = await proposePhase(c, { type, startDate })
   const { kcal, proteinG, fatPct } = view.proposal
   const id = await startPhase(c, {
@@ -341,8 +348,15 @@ describe('startPhase', () => {
     const c = ctx()
     await start(c, 'bulk', D('2026-10-01'))
     const input = { type: 'maintenance', kcal: 2700, proteinG: 150, fatPct: 25 } as const
-    await expectServiceError(startPhase(c, { ...input, startDate: '2026-10-01' }), 'phase_overlap')
-    await expectServiceError(startPhase(c, { ...input, startDate: '2026-09-30' }), 'phase_overlap')
+    // The bulk's own start revision (10-01) bounds the next start: 10-02 at the earliest.
+    await expectServiceError(
+      startPhase(c, { ...input, startDate: '2026-10-01' }),
+      'invalid_start_date',
+    )
+    await expectServiceError(
+      startPhase(c, { ...input, startDate: '2026-09-30' }),
+      'invalid_start_date',
+    )
     await endPhase(c, { date: '2026-10-20', reason: 'done' })
     await expectServiceError(startPhase(c, { ...input, startDate: '2026-10-20' }), 'phase_overlap')
     await startPhase(c, { ...input, startDate: '2026-10-21' })
@@ -440,6 +454,8 @@ describe('setManualTarget', () => {
       setManualTarget(c, { effectiveDate: SEED_DATE, kcal: 2800 }),
       'no_active_phase',
     )
+    // Phases start on their start date (never future-dated), so today is the phase start here
+    // and any earlier effective date is in the past.
     await start(c, 'bulk', addDays(SEED_DATE, 2))
     await expectServiceError(
       setManualTarget(c, { effectiveDate: addDays(SEED_DATE, -1), kcal: 2800 }),
@@ -447,7 +463,7 @@ describe('setManualTarget', () => {
     )
     await expectServiceError(
       setManualTarget(c, { effectiveDate: addDays(SEED_DATE, 1), kcal: 2800 }),
-      'before_phase_start',
+      'effective_in_past',
     )
     await expectServiceError(
       setManualTarget(c, { effectiveDate: addDays(SEED_DATE, 3) }),
