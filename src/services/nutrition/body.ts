@@ -32,7 +32,9 @@ const MEASUREMENT_KEYS = [
 ] as const satisfies readonly (keyof Measurements)[]
 
 /** Plausible ranges: anything outside is treated as a typo. */
-const RANGES: Readonly<Record<keyof Measurements, { min: number; max: number; label: string }>> = {
+export const BODY_RANGES: Readonly<
+  Record<keyof Measurements, { min: number; max: number; label: string }>
+> = {
   weightLb: { min: 50, max: 1000, label: 'Weight (lb)' },
   bodyFatPct: { min: 2, max: 70, label: 'Body fat %' },
   muscleMassLb: { min: 1, max: 1000, label: 'Muscle mass (lb)' },
@@ -130,7 +132,7 @@ function notFound(date: LocalDate): ServiceError {
 }
 
 function checkValue(key: keyof Measurements, value: unknown): number {
-  const { min, max, label } = RANGES[key]
+  const { min, max, label } = BODY_RANGES[key]
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
     throw new ServiceError(`invalid_${key}`, `${label} must be between ${min} and ${max}`, {
       value,

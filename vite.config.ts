@@ -2,6 +2,7 @@ import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import pkg from './package.json' with { type: 'json' }
 
 // GitHub Pages serves the app from /<repo-name>/. The path is case-sensitive and
 // must match the repo spelling exactly. Used in every mode so path bugs show up in dev.
@@ -11,6 +12,9 @@ const THEME = '#0f1216'
 
 export default defineConfig({
   base: BASE,
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   plugins: [
     react(),
     VitePWA({
