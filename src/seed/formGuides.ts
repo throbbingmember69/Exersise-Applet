@@ -3,7 +3,9 @@
 // every link was checked live through YouTube's oEmbed endpoint on 2026-10-10. The user's own link
 // (Exercise.formUrl) wins over these, and exercises without a guide get a YouTube search link.
 // Static content, not stored in the database: fixing a link ships with the app, no migration.
+// YouTube links (curated, or the user's own) play inside the app through the embedded player.
 import type { Exercise } from '@/domain/types'
+import { parseYouTubeUrl, type YouTubeVideo } from '@/domain/youtube'
 
 export interface FormGuide {
   videoUrl: string
@@ -777,6 +779,8 @@ export interface ResolvedFormGuide {
   title: string | null
   channel: string | null
   cues: readonly string[]
+  /** The YouTube video to play in the app; null for a search or a non-YouTube link. */
+  embed: YouTubeVideo | null
 }
 
 /** The guide to show for an exercise: the user's link, else the curated video, else a search. */
@@ -791,14 +795,16 @@ export function formGuideFor(
       title: null,
       channel: null,
       cues: curated?.cues ?? [],
+      embed: parseYouTubeUrl(exercise.formUrl),
     }
   }
-  if (curated) return { ...curated, source: 'curated' }
+  if (curated) return { ...curated, source: 'curated', embed: parseYouTubeUrl(curated.videoUrl) }
   return {
     videoUrl: youtubeSearchUrl(exercise.name),
     source: 'search',
     title: null,
     channel: null,
     cues: [],
+    embed: null,
   }
 }

@@ -2,7 +2,7 @@
 // suggestion and starts the rest timer; a finished session is read-only until Edit.
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { disposeCtx, renderScreen, type TestCtx } from '@/app/testing'
 import { SETTINGS_REGISTRY } from '@/domain/settings/registry'
 import { FORM_GUIDES } from '@/seed'
@@ -102,10 +102,38 @@ describe('Form guides', () => {
     const sheet = await screen.findByRole('dialog', { name: 'Form: Smith machine squat' })
     const guide = FORM_GUIDES['ex-smith-squat']!
     for (const cue of guide.cues) expect(within(sheet).getByText(cue)).toBeInTheDocument()
-    const link = within(sheet).getByRole('link', { name: /Watch on YouTube/ })
+    // The video plays inside the app; nothing loads from YouTube until it's tapped.
+    expect(sheet.querySelector('iframe')).toBeNull()
+    await userEvent.click(within(sheet).getByRole('button', { name: `Play video: ${guide.title}` }))
+    const player = sheet.querySelector('iframe')!
+    expect(player.getAttribute('src')).toBe(
+      'https://www.youtube-nocookie.com/embed/fEuYM-miK5U?rel=0&playsinline=1&modestbranding=1&autoplay=1',
+    )
+    expect(player).toHaveAttribute('title', guide.title)
+    expect(player).toHaveAttribute('referrerpolicy', 'strict-origin-when-cross-origin')
+    // Still one tap from the YouTube app, in case a video won't play embedded.
+    const link = within(sheet).getByRole('link', { name: /Open in YouTube/ })
     expect(link).toHaveAttribute('href', guide.videoUrl)
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('explain that the video needs a connection when offline (the cues still show)', async () => {
+    const c = ctx()
+    const id = await startSession(c, { gymId: 'gym-1', programDayId: 'day-lower-a' })
+    renderScreen(<Logger />, { ctx: c, route: '/train/session/:id', path: `/train/session/${id}` })
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Form guide for Smith machine squat' }),
+    )
+    const sheet = await screen.findByRole('dialog', { name: 'Form: Smith machine squat' })
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    try {
+      await userEvent.click(within(sheet).getByRole('button', { name: /^Play video/ }))
+      expect(within(sheet).getByRole('status')).toHaveTextContent(/needs an internet connection/)
+      expect(sheet.querySelector('iframe')).toBeNull()
+    } finally {
+      online.mockRestore()
+    }
   })
 
   it('are one tap from the Train menu’s Exercises entry', async () => {
@@ -123,8 +151,9 @@ describe('Form guides', () => {
       route: '/program/exercises/:id',
       path: '/program/exercises/ex-leg-press?from=train',
     })
-    const link = await screen.findByRole('link', { name: /Watch on YouTube/ })
+    const link = await screen.findByRole('link', { name: /Open in YouTube/ })
     expect(link).toHaveAttribute('href', FORM_GUIDES['ex-leg-press']!.videoUrl)
+    expect(screen.getByRole('button', { name: /^Play video/ })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Back/ })).toHaveAttribute(
       'href',
       '/program/exercises?from=train',

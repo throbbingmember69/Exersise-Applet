@@ -19,7 +19,7 @@ Things only a real phone can confirm. Open **https://throbbingmember69.github.io
 - [ ] Before updating: More → Data & backup → **Save backup file**.
 - [ ] After the app updates: History, Progress and Body look the same as before.
 - [ ] Train → Start workout → Upper shows **Incline Smith press** (find a load); Lower A and Lower B show **Hip abduction (machine)** after hip thrust.
-- [ ] Train → Exercises → any exercise shows its form cues; **Watch on YouTube** opens the YouTube app. In a workout, the **Form** button on a card does the same.
+- [ ] Train → Exercises → any exercise shows its form cues; **Play video** plays it inside the app (full screen works), and **Open in YouTube** opens the YouTube app. In a workout, the **Form** button on a card does the same.
 - [ ] Weekly volume → Planned shows glutes 16.
 
 ## Data

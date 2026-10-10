@@ -29,6 +29,10 @@ export default mergeConfig(
           test: {
             name: 'ui',
             environment: 'happy-dom',
+            // No network from tests: embedded players (YouTube iframes) stay empty.
+            environmentOptions: {
+              happyDOM: { settings: { disableIframePageLoading: true } },
+            },
             include: [
               'src/**/*.test.tsx',
               'src/platform/**/*.test.ts',
