@@ -116,6 +116,8 @@ export interface Exercise {
   /** Finishers are logged and count toward volume but never get progression. */
   isFinisher: boolean
   notes: string
+  /** The user's own form video link (http/https); null = the curated guide (seed/formGuides). */
+  formUrl: string | null
   archivedAt: EpochMs | null
   createdAt: EpochMs
   updatedAt: EpochMs

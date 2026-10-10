@@ -43,7 +43,7 @@ function realisticBackup(): Backup {
   }
   return {
     format: BACKUP_FORMAT,
-    schemaVersion: 1,
+    schemaVersion: BACKUP_SCHEMA_VERSION,
     appVersion: '0.1.0',
     exportedAt: T0 + 30 * 86_400_000,
     tables: {
@@ -113,6 +113,7 @@ function realisticBackup(): Backup {
           isMainLift: true,
           isFinisher: false,
           notes: '',
+          formUrl: null,
           archivedAt: null,
           createdAt: T0,
           updatedAt: T0,
@@ -130,6 +131,7 @@ function realisticBackup(): Backup {
           isMainLift: true,
           isFinisher: false,
           notes: 'Bench at 30°',
+          formUrl: 'https://www.youtube.com/watch?v=abcdefghijk',
           archivedAt: null,
           createdAt: T0,
           updatedAt: T0,
@@ -147,6 +149,7 @@ function realisticBackup(): Backup {
           isMainLift: true,
           isFinisher: false,
           notes: '',
+          formUrl: null,
           archivedAt: null,
           createdAt: T0,
           updatedAt: T0,
@@ -719,19 +722,22 @@ describe('parseBackup: rejected files', () => {
   it('refuses a backup from a newer schema version before validating anything else', () => {
     const json = withChanges({ schemaVersion: BACKUP_SCHEMA_VERSION + 1, tables: 'a newer layout' })
     expect(errorsOf(json)).toEqual([
-      'schemaVersion: this backup was made by a newer version of the app (schema 2; this app reads schema 1). Update the app, then restore.',
+      'schemaVersion: this backup was made by a newer version of the app (schema 3; this app reads schema 2). Update the app, then restore.',
     ])
   })
 
-  it('accepts only schema version 1 for now', () => {
+  it('accepts only the current schema version (older files are migrated before validation)', () => {
     expect(errorsOf(withChanges({ schemaVersion: 0 }))).toEqual([
-      'schemaVersion: expected 1, got 0',
+      'schemaVersion: expected 2, got 0',
     ])
-    expect(errorsOf(withChanges({ schemaVersion: '1' }))).toEqual([
-      'schemaVersion: expected 1, got "1"',
+    expect(errorsOf(withChanges({ schemaVersion: 1 }))).toEqual([
+      'schemaVersion: expected 2, got 1',
+    ])
+    expect(errorsOf(withChanges({ schemaVersion: '2' }))).toEqual([
+      'schemaVersion: expected 2, got "2"',
     ])
     expect(errorsOf(withChanges({ schemaVersion: REMOVE }))).toEqual([
-      'schemaVersion: expected 1 (missing)',
+      'schemaVersion: expected 2 (missing)',
     ])
   })
 

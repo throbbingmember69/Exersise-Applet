@@ -69,6 +69,8 @@ export interface LoggerExerciseView {
   adHoc: boolean
   exerciseId: string
   exerciseName: string
+  /** The library exercise's own form link now (not snapshotted), for the Form guide. */
+  formUrl: string | null
   loadType: LoadType
   perHand: boolean
   unilateral: boolean
@@ -120,6 +122,7 @@ function buildLoggerView(q: QueryData, session: Session): LoggerView {
       adHoc: se.adHoc,
       exerciseId: se.exerciseId,
       exerciseName: se.exerciseName,
+      formUrl: q.model.exercise(se.exerciseId)?.formUrl ?? null,
       loadType: se.loadType,
       perHand: se.perHand,
       unilateral: se.unilateral,

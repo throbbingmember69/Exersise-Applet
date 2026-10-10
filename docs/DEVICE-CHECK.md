@@ -15,6 +15,13 @@ Things only a real phone can confirm. Open **https://throbbingmember69.github.io
 - [ ] Lock the screen during rest: note whether the alert arrives on time. Android may delay it; keeping the app open with the screen on is the reliable mode.
 - [ ] Finish → the summary shows next time's loads.
 
+## After the October 2026 update
+- [ ] Before updating: More → Data & backup → **Save backup file**.
+- [ ] After the app updates: History, Progress and Body look the same as before.
+- [ ] Train → Start workout → Upper shows **Incline Smith press** (find a load); Lower A and Lower B show **Hip abduction (machine)** after hip thrust.
+- [ ] Train → Exercises → any exercise shows its form cues; **Watch on YouTube** opens the YouTube app. In a workout, the **Form** button on a card does the same.
+- [ ] Weekly volume → Planned shows glutes 16.
+
 ## Data
 - [ ] More → Data & backup → **Save backup file** → share to Drive (or Files) and check the file is there.
 - [ ] **Export CSV** → Workout sets → opens in Sheets.

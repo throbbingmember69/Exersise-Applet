@@ -1,11 +1,16 @@
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { useLive } from '@/app/hooks'
 import { getExerciseLibrary } from '@/services/program/queries'
 import { Badge, ButtonLink, LinkList, LinkRow, PageHeader, Stack } from '@/ui/kit'
 import kit from '@/ui/kit.module.css'
 import Spinner from '@/ui/Spinner'
 
+/** Opened from Train (?from=train) or from More; back and detail links keep the origin. */
 export default function ExerciseLibrary() {
+  const [params] = useSearchParams()
+  const fromTrain = params.get('from') === 'train'
+  const suffix = fromTrain ? '?from=train' : ''
   const { data: library } = useLive((ctx) => getExerciseLibrary(ctx), [])
   const [query, setQuery] = useState('')
   const list = useMemo(() => {
@@ -20,7 +25,10 @@ export default function ExerciseLibrary() {
 
   return (
     <>
-      <PageHeader title="Exercise library" back="/more" />
+      <PageHeader title="Exercise library" back={fromTrain ? '/train' : '/more'} />
+      <p className={kit.muted} style={{ margin: '0 0 var(--space-3)' }}>
+        Tap an exercise for its form guide: cues and a video.
+      </p>
       <Stack>
         <ButtonLink to="/program/exercises/new" variant="primary" block icon="plus">
           New exercise
@@ -40,7 +48,7 @@ export default function ExerciseLibrary() {
             {list.map((e) => (
               <LinkRow
                 key={e.exercise.id}
-                to={`/program/exercises/${e.exercise.id}`}
+                to={`/program/exercises/${e.exercise.id}${suffix}`}
                 label={e.exercise.name}
                 hint={
                   e.muscles

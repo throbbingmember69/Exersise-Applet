@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { LocalDate } from '@/domain/types'
+import { setGymSlotOverride } from '../../program/commands'
 import { updateSettings } from '../../settings'
+import { addExercise, logSet, startSession, swapExercise } from '../session'
 import { getVolumeDashboard } from './volume'
 import { logDay, sets, testCtxPool, type TestCtx } from './testHelpers'
 
@@ -229,5 +231,36 @@ describe('getVolumeDashboard: logged', () => {
     const prev = await getVolumeDashboard(c, { weekOf: d('2026-10-03'), today: d('2026-10-04') })
     expect(prev.week).toMatchObject({ start: '2026-09-27', complete: true })
     expect(prev.logged.totalSets).toBe(94)
+  })
+})
+
+describe('getVolumeDashboard: swapped and added exercises', () => {
+  it('counts one-off swaps, gym-override swaps and ad hoc adds through their own muscles', async () => {
+    const c = pool.make({ startMs: Date.UTC(2026, 8, 29, 12) }) // Tue 2026-09-29
+    // A permanent swap at this gym: Push's lateral raise becomes a face pull (rear delts).
+    await setGymSlotOverride(c, 'gym-1', 'slot-push-5', 'ex-face-pull')
+    const sessionId = await startSession(c, { gymId: 'gym-1', programDayId: 'day-push' })
+    const rows = await c.db.sessionExercises.where('sessionId').equals(sessionId).toArray()
+    const bySlot = (slotId: string) => rows.find((r) => r.slotId === slotId)!
+    expect(bySlot('slot-push-5')).toMatchObject({
+      exerciseId: 'ex-face-pull',
+      swapKind: 'gym_override',
+    })
+    // A one-off swap: the machine fly (chest) becomes a preacher curl (biceps) today only.
+    const swapped = await swapExercise(c, bySlot('slot-push-3').id, 'ex-preacher-curl')
+    // An exercise added to the workout: barbell shrugs (traps), not part of progression.
+    const added = await addExercise(c, sessionId, 'ex-barbell-shrug')
+    for (const sessionExerciseId of [bySlot('slot-push-5').id, swapped, added]) {
+      await logSet(c, { sessionExerciseId, loadLb: 50, reps: 12 })
+      await logSet(c, { sessionExerciseId, loadLb: 50, reps: 12 })
+    }
+
+    const dash = await getVolumeDashboard(c, { weekOf: d('2026-09-29'), today: d('2026-09-29') })
+    const logged = Object.fromEntries(dash.muscles.map((m) => [m.muscleId, m.logged]))
+    expect(logged).toMatchObject({ rear_delts: 2, biceps: 2, traps: 2, chest: 0, side_delts: 0 })
+    expect(dash.logged.totalSets).toBe(6)
+    // The plan follows the gym's permanent swap, not the one-off swap or the added exercise.
+    const planned = Object.fromEntries(dash.muscles.map((m) => [m.muscleId, m.planned]))
+    expect(planned).toMatchObject({ side_delts: 5.5, rear_delts: 11, chest: 14, traps: 0 })
   })
 })

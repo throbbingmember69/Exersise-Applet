@@ -18,7 +18,7 @@ describe('seeding', () => {
 
     const db = new AppDB(name)
     expect(await db.profile.toArray()).toEqual([SEED.profile])
-    expect(await db.programSlots.count()).toBe(34)
+    expect(await db.programSlots.count()).toBe(SEED.programSlots.length)
     db.close()
   })
 

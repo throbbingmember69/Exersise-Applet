@@ -3,6 +3,7 @@
 import { AppDB } from '@/db/schema'
 import { localDateOf } from '@/domain/dates'
 import type { LocalDate } from '@/domain/types'
+import { SPEC_SEED, type SeedData } from '@/seed'
 
 export interface ServiceCtx {
   db: AppDB
@@ -29,14 +30,18 @@ export function getAppCtx(): ServiceCtx {
 }
 
 /**
- * A context for tests: isolated database (seeded like a first launch unless `seed: false`),
- * controllable clock, sequential ids.
+ * A context for tests: isolated database, controllable clock, sequential ids. The database is
+ * seeded with the spec's original program (SPEC_SEED: the tables the spec's numbers come from)
+ * unless `seed` is false (empty), true (the live first-launch seed) or another SeedData.
  */
-export function createTestCtx(opts: { dbName?: string; startMs?: number; seed?: boolean } = {}) {
+export function createTestCtx(
+  opts: { dbName?: string; startMs?: number; seed?: boolean | SeedData } = {},
+) {
   let t = opts.startMs ?? Date.UTC(2026, 8, 24, 12)
   let n = 0
+  const seed = opts.seed === undefined ? SPEC_SEED : opts.seed
   const ctx: ServiceCtx & { setNow: (ms: number) => void; advance: (ms: number) => void } = {
-    db: new AppDB(opts.dbName ?? `test-${crypto.randomUUID()}`, { seed: opts.seed }),
+    db: new AppDB(opts.dbName ?? `test-${crypto.randomUUID()}`, { seed }),
     now: () => t,
     newId: () => `id-${String(++n).padStart(4, '0')}`,
     setNow: (ms) => {

@@ -302,6 +302,8 @@ export interface ExerciseInput {
   isMainLift?: boolean
   isFinisher?: boolean
   notes?: string
+  /** The user's own form video link (http/https); null or '' = use the curated guide. */
+  formUrl?: string | null
 }
 
 export async function createExercise(ctx: ServiceCtx, input: ExerciseInput): Promise<string> {
@@ -317,6 +319,7 @@ export async function createExercise(ctx: ServiceCtx, input: ExerciseInput): Pro
     isFinisher: optionalBool(input.isFinisher, 'isFinisher') ?? false,
   }
   const notes = input.notes === undefined ? '' : requireText(input.notes, 'Notes')
+  const formUrl = input.formUrl === undefined ? null : checkFormUrl(input.formUrl)
   const { db } = ctx
   const id = ctx.newId()
   await db.transaction('rw', [db.exercises, db.muscles], async () => {
@@ -337,6 +340,7 @@ export async function createExercise(ctx: ServiceCtx, input: ExerciseInput): Pro
       isMainLift: flags.isMainLift,
       isFinisher: flags.isFinisher,
       notes,
+      formUrl,
       archivedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -367,6 +371,7 @@ export async function updateExercise(
   const loadType = patch.loadType === undefined ? undefined : checkLoadType(patch.loadType)
   const stepLb = patch.stepLb === undefined ? undefined : checkStep(patch.stepLb)
   const notes = patch.notes === undefined ? undefined : requireText(patch.notes, 'Notes')
+  const formUrl = patch.formUrl === undefined ? undefined : checkFormUrl(patch.formUrl)
   const flags = {
     equipmentSpecific: optionalBool(patch.equipmentSpecific, 'equipmentSpecific'),
     perHand: optionalBool(patch.perHand, 'perHand'),
@@ -382,6 +387,7 @@ export async function updateExercise(
     if (name !== undefined) next.name = name
     if (stepLb !== undefined) next.stepLb = stepLb
     if (notes !== undefined) next.notes = notes
+    if (formUrl !== undefined) next.formUrl = formUrl
     if (patch.defaultRegime !== undefined) {
       next.defaultRegime = checkRegime({
         ...current.defaultRegime,
@@ -784,6 +790,34 @@ export async function createMuscle(ctx: ServiceCtx, name: string): Promise<strin
 function requireText(value: unknown, what: string): string {
   if (typeof value !== 'string') throw new ServiceError('invalid_text', `${what} must be text.`)
   return value
+}
+
+/** Longest form link accepted (a typical video URL is under 100 characters). */
+const MAX_FORM_URL_LENGTH = 500
+
+/** A form video link: an http(s) URL, or null (empty text clears it back to the curated guide). */
+function checkFormUrl(value: unknown): string | null {
+  if (value === null) return null
+  if (typeof value !== 'string')
+    throw new ServiceError('invalid_form_url', 'The link must be text.')
+  const url = value.trim()
+  if (url === '') return null
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new ServiceError(
+      'invalid_form_url',
+      'That isn’t a web link. Paste one starting with https://.',
+    )
+  }
+  if (
+    (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') ||
+    url.length > MAX_FORM_URL_LENGTH
+  ) {
+    throw new ServiceError('invalid_form_url', 'Paste a web link starting with https://.')
+  }
+  return url
 }
 
 function requireName(value: unknown, what: string): string {

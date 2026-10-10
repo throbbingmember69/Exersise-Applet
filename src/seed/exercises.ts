@@ -3,6 +3,8 @@
 // optional finishers (audit finding #50). loadType follows finding #45; equipment-specific means
 // machine or cable, per hand means dumbbell. Steps follow the variant (finding #9). An exercise's
 // default regime is the one of the first program slot it fills; finishers use 3 × 8–12 @ RIR 0–1.
+// This is the spec's library as first shipped; the live seed adds the October 2026 update (see
+// seed/index.ts and seed/update2026-10.ts).
 import type {
   Exercise,
   LoadType,
@@ -13,7 +15,7 @@ import type {
 } from '@/domain/types'
 import type { SeedMuscleId } from './muscles'
 import { SEED_EPOCH_MS } from './profile'
-import { SEED_PROGRAM_SLOTS } from './program'
+import { SPEC_PROGRAM_SLOTS } from './program'
 
 type Weights = Partial<Record<SeedMuscleId, MuscleWeight>>
 
@@ -92,7 +94,7 @@ const FINISHER_REGIME: Regime = {
 }
 
 function firstSlotRegime(exerciseId: string): Regime {
-  const slot = SEED_PROGRAM_SLOTS.find(
+  const slot = SPEC_PROGRAM_SLOTS.find(
     (s) => s.defaultExerciseId === exerciseId || s.alternateExerciseIds.includes(exerciseId),
   )
   if (!slot) throw new Error(`Seed exercise ${exerciseId} fills no program slot`)
@@ -120,13 +122,14 @@ function toExercise(r: Row, defaultRegime: Regime, isFinisher: boolean): Exercis
     isMainLift: r.isMainLift ?? false,
     isFinisher,
     notes: r.notes ?? '',
+    formUrl: null,
     archivedAt: null,
     createdAt: SEED_EPOCH_MS,
     updatedAt: SEED_EPOCH_MS,
   }
 }
 
-export const SEED_EXERCISES: readonly Exercise[] = [
+export const SPEC_EXERCISES: readonly Exercise[] = [
   ...PROGRAM_ROWS.map((r) => toExercise(r, firstSlotRegime(r.id), false)),
   ...FINISHER_ROWS.map((r) => toExercise(r, { ...FINISHER_REGIME }, true)),
 ]

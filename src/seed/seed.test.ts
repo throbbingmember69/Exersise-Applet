@@ -2,18 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { parseTrackKey, trackKey } from '@/domain/progression/keys'
 import type { Exercise, LoadType, ProgramSlot, Regime } from '@/domain/types'
 import {
-  SEED,
+  SPEC_SEED,
   SEED_BODY_ENTRY,
   SEED_EPOCH_MS,
-  SEED_EXERCISES,
+  SPEC_EXERCISES,
   SEED_GYM_ID,
   SEED_GYMS,
   SEED_MUSCLE_IDS,
   SEED_MUSCLES,
   SEED_PROFILE,
-  SEED_PROGRAM_DAYS,
-  SEED_PROGRAM_SLOTS,
-  SEED_TRACK_STARTS,
+  SPEC_PROGRAM_DAYS,
+  SPEC_PROGRAM_SLOTS,
+  SPEC_TRACK_STARTS,
   SEED_VERSION,
 } from './index'
 
@@ -179,8 +179,8 @@ const FINISHER_REGIME: Regime = {
   restMaxSec: 90,
 }
 
-const exerciseById = new Map(SEED_EXERCISES.map((e) => [e.id, e]))
-const exerciseByName = new Map(SEED_EXERCISES.map((e) => [e.name, e]))
+const exerciseById = new Map(SPEC_EXERCISES.map((e) => [e.id, e]))
+const exerciseByName = new Map(SPEC_EXERCISES.map((e) => [e.name, e]))
 const muscleIdByName = new Map(SEED_MUSCLES.map((m) => [m.name.toLowerCase(), m.id]))
 
 function exercise(id: string): Exercise {
@@ -202,7 +202,7 @@ function muscleId(name: string): string {
 }
 
 function slotsOf(dayId: string): ProgramSlot[] {
-  return SEED_PROGRAM_SLOTS.filter((s) => s.programDayId === dayId)
+  return SPEC_PROGRAM_SLOTS.filter((s) => s.programDayId === dayId)
 }
 
 function names(exercises: readonly Exercise[]): string[] {
@@ -251,28 +251,28 @@ describe('seed ids and referential integrity', () => {
   it('has the expected table sizes', () => {
     expect(SEED_MUSCLES).toHaveLength(13)
     expect(SEED_GYMS).toHaveLength(1)
-    expect(SEED_EXERCISES).toHaveLength(33)
-    expect(SEED_PROGRAM_DAYS).toHaveLength(5)
-    expect(SEED_PROGRAM_SLOTS).toHaveLength(34)
-    expect(SEED_TRACK_STARTS).toHaveLength(34)
+    expect(SPEC_EXERCISES).toHaveLength(33)
+    expect(SPEC_PROGRAM_DAYS).toHaveLength(5)
+    expect(SPEC_PROGRAM_SLOTS).toHaveLength(34)
+    expect(SPEC_TRACK_STARTS).toHaveLength(34)
   })
 
   it('uses unique, deterministic slug ids that never contain "|"', () => {
     const ids = [
       ...SEED_MUSCLES.map((m) => m.id),
       ...SEED_GYMS.map((g) => g.id),
-      ...SEED_EXERCISES.map((e) => e.id),
-      ...SEED_PROGRAM_DAYS.map((d) => d.id),
-      ...SEED_PROGRAM_SLOTS.map((s) => s.id),
+      ...SPEC_EXERCISES.map((e) => e.id),
+      ...SPEC_PROGRAM_DAYS.map((d) => d.id),
+      ...SPEC_PROGRAM_SLOTS.map((s) => s.id),
     ]
     expect(new Set(ids).size).toBe(ids.length)
     for (const id of ids) expect(id).toMatch(/^[a-z0-9_-]+$/)
-    expect(new Set(SEED_TRACK_STARTS.map((t) => t.trackKey)).size).toBe(SEED_TRACK_STARTS.length)
+    expect(new Set(SPEC_TRACK_STARTS.map((t) => t.trackKey)).size).toBe(SPEC_TRACK_STARTS.length)
   })
 
   it('points every slot at an existing day and exercises', () => {
-    const dayIds = new Set(SEED_PROGRAM_DAYS.map((d) => d.id))
-    for (const slot of SEED_PROGRAM_SLOTS) {
+    const dayIds = new Set(SPEC_PROGRAM_DAYS.map((d) => d.id))
+    for (const slot of SPEC_PROGRAM_SLOTS) {
       expect(dayIds.has(slot.programDayId)).toBe(true)
       expect(exerciseById.has(slot.defaultExerciseId)).toBe(true)
       for (const alt of slot.alternateExerciseIds) {
@@ -284,7 +284,7 @@ describe('seed ids and referential integrity', () => {
 
   it('weights only seed muscles, at 1.0 or 0.5, with exactly one primary muscle', () => {
     const muscleIds = new Set<string>(SEED_MUSCLE_IDS)
-    for (const e of SEED_EXERCISES) {
+    for (const e of SPEC_EXERCISES) {
       const entries = Object.entries(e.muscleWeights)
       for (const [m, w] of entries) {
         expect(muscleIds.has(m)).toBe(true)
@@ -295,12 +295,12 @@ describe('seed ids and referential integrity', () => {
   })
 
   it('matches every track start to a slot and its default exercise', () => {
-    SEED_PROGRAM_SLOTS.forEach((slot, i) => {
-      const start = SEED_TRACK_STARTS[i]
+    SPEC_PROGRAM_SLOTS.forEach((slot, i) => {
+      const start = SPEC_TRACK_STARTS[i]
       expect(start?.programDayId).toBe(slot.programDayId)
       expect(start?.exerciseId).toBe(slot.defaultExerciseId)
     })
-    for (const t of SEED_TRACK_STARTS) {
+    for (const t of SPEC_TRACK_STARTS) {
       expect(t.trackKey).toBe(trackKey(t.programDayId, t.exerciseId, t.gymScope))
       expect(parseTrackKey(t.trackKey)).toEqual({
         programDayId: t.programDayId,
@@ -312,17 +312,17 @@ describe('seed ids and referential integrity', () => {
 
   it('uses every program exercise in some slot, and no finisher in any', () => {
     const used = new Set(
-      SEED_PROGRAM_SLOTS.flatMap((s) => [s.defaultExerciseId, ...s.alternateExerciseIds]),
+      SPEC_PROGRAM_SLOTS.flatMap((s) => [s.defaultExerciseId, ...s.alternateExerciseIds]),
     )
-    for (const e of SEED_EXERCISES) expect(used.has(e.id)).toBe(!e.isFinisher)
+    for (const e of SPEC_EXERCISES) expect(used.has(e.id)).toBe(!e.isFinisher)
   })
 
   it('stamps every seed row with the fixed seed timestamp', () => {
-    for (const e of SEED_EXERCISES) {
+    for (const e of SPEC_EXERCISES) {
       expect(e.createdAt).toBe(SEED_EPOCH_MS)
       expect(e.updatedAt).toBe(SEED_EPOCH_MS)
     }
-    for (const t of SEED_TRACK_STARTS) expect(t.updatedAt).toBe(SEED_EPOCH_MS)
+    for (const t of SPEC_TRACK_STARTS) expect(t.updatedAt).toBe(SEED_EPOCH_MS)
     expect(SEED_GYMS[0]?.createdAt).toBe(SEED_EPOCH_MS)
   })
 
@@ -330,9 +330,9 @@ describe('seed ids and referential integrity', () => {
     const rows = [
       ...SEED_MUSCLES,
       ...SEED_GYMS,
-      ...SEED_EXERCISES,
-      ...SEED_PROGRAM_DAYS,
-      ...SEED_PROGRAM_SLOTS,
+      ...SPEC_EXERCISES,
+      ...SPEC_PROGRAM_DAYS,
+      ...SPEC_PROGRAM_SLOTS,
     ]
     for (const r of rows) expect(r.archivedAt).toBeNull()
   })
@@ -383,7 +383,7 @@ describe('seed gym and program days', () => {
   })
 
   it('trains Mon Lower A, Tue Push, Wed Pull, Fri Lower B, Sat Upper (Thu and Sun off)', () => {
-    expect(SEED_PROGRAM_DAYS.map((d) => [d.id, d.name, d.weekday, d.order])).toEqual([
+    expect(SPEC_PROGRAM_DAYS.map((d) => [d.id, d.name, d.weekday, d.order])).toEqual([
       ['day-lower-a', 'Lower A', 1, 0],
       ['day-push', 'Push', 2, 1],
       ['day-pull', 'Pull', 3, 2],
@@ -393,8 +393,8 @@ describe('seed gym and program days', () => {
   })
 
   it('has 6/7/7/7/7 slots per day, ordered and numbered like the tables', () => {
-    expect(SEED_PROGRAM_DAYS.map((d) => slotsOf(d.id).length)).toEqual([6, 7, 7, 7, 7])
-    for (const d of SEED_PROGRAM_DAYS) {
+    expect(SPEC_PROGRAM_DAYS.map((d) => slotsOf(d.id).length)).toEqual([6, 7, 7, 7, 7])
+    for (const d of SPEC_PROGRAM_DAYS) {
       slotsOf(d.id).forEach((slot, i) => {
         expect(slot.order).toBe(i)
         expect(slot.id).toBe(`slot-${d.id.slice('day-'.length)}-${i + 1}`)
@@ -430,11 +430,11 @@ describe('seed slots match the spec tables', () => {
   })
 
   it('covers every slot', () => {
-    expect(specRows()).toHaveLength(SEED_PROGRAM_SLOTS.length)
+    expect(specRows()).toHaveLength(SPEC_PROGRAM_SLOTS.length)
   })
 
   it('splits the three "or" rows into default + alternate', () => {
-    const withAlternates = SEED_PROGRAM_SLOTS.filter((s) => s.alternateExerciseIds.length > 0)
+    const withAlternates = SPEC_PROGRAM_SLOTS.filter((s) => s.alternateExerciseIds.length > 0)
     expect(withAlternates.map((s) => [s.id, s.defaultExerciseId, s.alternateExerciseIds])).toEqual([
       ['slot-push-2', 'ex-flat-machine-press', ['ex-flat-db-press']],
       ['slot-lower-b-1', 'ex-deadlift', ['ex-rdl']],
@@ -446,7 +446,7 @@ describe('seed slots match the spec tables', () => {
 describe('seed exercises', () => {
   it('copies the volume accounting weights, sharing them across "or" variants', () => {
     const covered = SPEC_WEIGHTS.flatMap(([exercises]) => exercises)
-    expect(covered.sort()).toEqual(names(SEED_EXERCISES))
+    expect(covered.sort()).toEqual(names(SPEC_EXERCISES))
     for (const [exercises, primary, assisting] of SPEC_WEIGHTS) {
       const expected = Object.fromEntries([
         [muscleId(primary), 1],
@@ -458,32 +458,32 @@ describe('seed exercises', () => {
 
   it('maps load types per audit finding #45', () => {
     const covered = Object.values(LOAD_TYPES).flat()
-    expect([...covered].sort()).toEqual(names(SEED_EXERCISES))
+    expect([...covered].sort()).toEqual(names(SPEC_EXERCISES))
     for (const [loadType, exercises] of Object.entries(LOAD_TYPES)) {
       for (const name of exercises) expect(named(name).loadType).toBe(loadType)
     }
   })
 
   it('derives equipment-specific (machine/cable) and per-hand (dumbbell) from the load type', () => {
-    for (const e of SEED_EXERCISES) {
+    for (const e of SPEC_EXERCISES) {
       expect(e.equipmentSpecific).toBe(e.loadType === 'machine' || e.loadType === 'cable')
       expect(e.perHand).toBe(e.loadType === 'dumbbell')
     }
   })
 
   it('flags unilateral work, main lifts and finishers', () => {
-    expect(names(SEED_EXERCISES.filter((e) => e.unilateral))).toEqual([
+    expect(names(SPEC_EXERCISES.filter((e) => e.unilateral))).toEqual([
       'Bulgarian split squat',
       'Single-arm overhead cable triceps extension',
     ])
-    expect(names(SEED_EXERCISES.filter((e) => e.isMainLift))).toEqual([
+    expect(names(SPEC_EXERCISES.filter((e) => e.isMainLift))).toEqual([
       'Deadlift',
       'Incline DB bench press',
       'Overhead shoulder press',
       'Smith machine squat',
       'Weighted chin-up',
     ])
-    expect(names(SEED_EXERCISES.filter((e) => e.isFinisher))).toEqual([
+    expect(names(SPEC_EXERCISES.filter((e) => e.isFinisher))).toEqual([
       'Barbell shrug',
       'Hyper Y-W',
     ])
@@ -502,8 +502,8 @@ describe('seed exercises', () => {
   })
 
   it("uses the regime of the exercise's first program slot as its default", () => {
-    for (const e of SEED_EXERCISES.filter((x) => !x.isFinisher)) {
-      const first = SEED_PROGRAM_SLOTS.find(
+    for (const e of SPEC_EXERCISES.filter((x) => !x.isFinisher)) {
+      const first = SPEC_PROGRAM_SLOTS.find(
         (s) => s.defaultExerciseId === e.id || s.alternateExerciseIds.includes(e.id),
       )
       expect(e.defaultRegime).toEqual({
@@ -533,7 +533,7 @@ describe('seed exercises', () => {
   })
 
   it('gives finishers 3 × 8–12 @ RIR 0–1 with 90 s rest', () => {
-    for (const e of SEED_EXERCISES.filter((x) => x.isFinisher)) {
+    for (const e of SPEC_EXERCISES.filter((x) => x.isFinisher)) {
       expect(e.defaultRegime).toEqual(FINISHER_REGIME)
     }
   })
@@ -548,12 +548,12 @@ describe('seed track starts', () => {
   it('takes start loads from the spec (per hand, added load, blank for "Set in week 1")', () => {
     for (const { dayId, index, row } of specRows()) {
       const slot = slotsOf(dayId)[index]
-      const start = SEED_TRACK_STARTS.find(
+      const start = SPEC_TRACK_STARTS.find(
         (t) => t.programDayId === dayId && t.exerciseId === slot?.defaultExerciseId,
       )
       expect(start?.startLoadLb).toBe(parseStartLoad(row[4]))
     }
-    const byExercise = (id: string) => SEED_TRACK_STARTS.find((t) => t.exerciseId === id)
+    const byExercise = (id: string) => SPEC_TRACK_STARTS.find((t) => t.exerciseId === id)
     expect(byExercise('ex-weighted-chin-up')?.startLoadLb).toBe(50)
     expect(byExercise('ex-incline-db-bench')?.startLoadLb).toBe(70)
     expect(byExercise('ex-incline-cable-press')?.startLoadLb).toBe(53)
@@ -562,7 +562,7 @@ describe('seed track starts', () => {
   })
 
   it('calibrates the "Set in week 1" slots and the six exercises whose rep ranges changed', () => {
-    const calibrating = SEED_PROGRAM_SLOTS.filter((_, i) => SEED_TRACK_STARTS[i]?.calibrate)
+    const calibrating = SPEC_PROGRAM_SLOTS.filter((_, i) => SPEC_TRACK_STARTS[i]?.calibrate)
     expect(calibrating.map((s) => s.id).sort()).toEqual(
       [
         'slot-push-2', // flat press, Set in week 1
@@ -576,24 +576,24 @@ describe('seed track starts', () => {
         'slot-lower-b-1', // deadlift
       ].sort(),
     )
-    const recalibrating = SEED_TRACK_STARTS.filter((t) => t.calibrate && t.startLoadLb !== null)
+    const recalibrating = SPEC_TRACK_STARTS.filter((t) => t.calibrate && t.startLoadLb !== null)
     expect(recalibrating).toHaveLength(7)
   })
 
   it('scopes machine and cable tracks to Gym 1 and shares free-weight tracks', () => {
-    for (const t of SEED_TRACK_STARTS) {
+    for (const t of SPEC_TRACK_STARTS) {
       expect(t.gymScope).toBe(exercise(t.exerciseId).equipmentSpecific ? SEED_GYM_ID : '*')
     }
-    expect(SEED_TRACK_STARTS.find((t) => t.exerciseId === 'ex-deadlift')?.trackKey).toBe(
+    expect(SPEC_TRACK_STARTS.find((t) => t.exerciseId === 'ex-deadlift')?.trackKey).toBe(
       'day-lower-b|ex-deadlift|*',
     )
-    expect(SEED_TRACK_STARTS.find((t) => t.exerciseId === 'ex-smith-squat')?.trackKey).toBe(
+    expect(SPEC_TRACK_STARTS.find((t) => t.exerciseId === 'ex-smith-squat')?.trackKey).toBe(
       'day-lower-a|ex-smith-squat|gym-1',
     )
   })
 
   it('keeps an exercise on two days as two tracks with the same start load', () => {
-    const legExt = SEED_TRACK_STARTS.filter((t) => t.exerciseId === 'ex-leg-extension')
+    const legExt = SPEC_TRACK_STARTS.filter((t) => t.exerciseId === 'ex-leg-extension')
     expect(legExt.map((t) => t.trackKey)).toEqual([
       'day-lower-a|ex-leg-extension|gym-1',
       'day-lower-b|ex-leg-extension|gym-1',
@@ -603,17 +603,17 @@ describe('seed track starts', () => {
 })
 
 describe('seed bundle', () => {
-  it('bundles every seeded table', () => {
-    expect(SEED_VERSION).toBe(1)
-    expect(SEED.profile).toBe(SEED_PROFILE)
-    expect(SEED.bodyEntries).toEqual([SEED_BODY_ENTRY])
-    expect(SEED.muscles).toBe(SEED_MUSCLES)
-    expect(SEED.gyms).toBe(SEED_GYMS)
-    expect(SEED.exercises).toBe(SEED_EXERCISES)
-    expect(SEED.programDays).toBe(SEED_PROGRAM_DAYS)
-    expect(SEED.programSlots).toBe(SEED_PROGRAM_SLOTS)
-    expect(SEED.trackStarts).toBe(SEED_TRACK_STARTS)
-    expect(SEED.gymSlotOverrides).toEqual([])
-    expect(SEED.gymExerciseSettings).toEqual([])
+  it('bundles every seeded table of the spec seed', () => {
+    expect(SEED_VERSION).toBe(2)
+    expect(SPEC_SEED.profile).toBe(SEED_PROFILE)
+    expect(SPEC_SEED.bodyEntries).toEqual([SEED_BODY_ENTRY])
+    expect(SPEC_SEED.muscles).toBe(SEED_MUSCLES)
+    expect(SPEC_SEED.gyms).toBe(SEED_GYMS)
+    expect(SPEC_SEED.exercises).toBe(SPEC_EXERCISES)
+    expect(SPEC_SEED.programDays).toBe(SPEC_PROGRAM_DAYS)
+    expect(SPEC_SEED.programSlots).toBe(SPEC_PROGRAM_SLOTS)
+    expect(SPEC_SEED.trackStarts).toBe(SPEC_TRACK_STARTS)
+    expect(SPEC_SEED.gymSlotOverrides).toEqual([])
+    expect(SPEC_SEED.gymExerciseSettings).toEqual([])
   })
 })

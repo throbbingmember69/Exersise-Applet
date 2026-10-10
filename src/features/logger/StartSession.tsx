@@ -200,8 +200,8 @@ export default function StartSession() {
         {dayId === AD_HOC ? (
           <Card>
             <p className={styles.muted}>
-              An ad hoc workout starts empty; add exercises as you go. They count toward volume and
-              strength charts but don’t change your program’s loads.
+              An ad hoc workout starts empty; add exercises as you go. They count toward weekly
+              volume and strength charts but don’t change your program’s loads.
             </p>
           </Card>
         ) : preview ? (

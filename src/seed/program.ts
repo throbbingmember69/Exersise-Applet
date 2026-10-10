@@ -2,6 +2,8 @@
 // gym. Each slot owns its regime (sets, rep range, RIR, rest). An "X or Y" row defaults to the
 // first-named exercise with the other as an alternate. Rest is stored as a min/max pair:
 // "90 s" → 90/90, "2 min" → 120/120, "2–3 min" → 120/180, "3 min" → 180/180.
+// This is the spec's program as first shipped; the live seed applies the October 2026 update
+// (seed/update2026-10.ts) on top, exactly as existing databases are upgraded.
 import type { Gym, ProgramDay, ProgramSlot } from '@/domain/types'
 import { SEED_EPOCH_MS } from './profile'
 
@@ -115,10 +117,10 @@ const PROGRAM: readonly { day: ProgramDay; rows: readonly SlotRow[] }[] = [
   },
 ]
 
-export const SEED_PROGRAM_DAYS: readonly ProgramDay[] = PROGRAM.map((p) => p.day)
+export const SPEC_PROGRAM_DAYS: readonly ProgramDay[] = PROGRAM.map((p) => p.day)
 
 /** Slots in day order, then table order. Ids follow the table's # column: `slot-push-2`. */
-export const SEED_PROGRAM_SLOTS: readonly ProgramSlot[] = PROGRAM.flatMap(({ day, rows }) =>
+export const SPEC_PROGRAM_SLOTS: readonly ProgramSlot[] = PROGRAM.flatMap(({ day, rows }) =>
   rows.map((r, i): ProgramSlot => ({
     id: `slot-${day.id.replace(/^day-/, '')}-${i + 1}`,
     programDayId: day.id,

@@ -5,13 +5,16 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { disposeCtx, renderScreen, type TestCtx } from '@/app/testing'
 import { SETTINGS_REGISTRY } from '@/domain/settings/registry'
+import { FORM_GUIDES } from '@/seed'
 import { createTestCtx } from '@/services/context'
 import { loadSettings } from '@/services/settings'
 import { getRestTimer } from '@/services/training/restTimerState'
 import { finishSession, logSet, startSession } from '@/services/training/session'
 import SessionDetail from './history/SessionDetail'
 import Logger from './logger/Logger'
+import ExerciseEditor from './program/ExerciseEditor'
 import Settings from './settings'
+import Train from './train'
 
 const ctxs: TestCtx[] = []
 function ctx(): TestCtx {
@@ -85,5 +88,54 @@ describe('Session detail', () => {
       ),
     )
     expect(await screen.findByRole('button', { name: 'Set 1, edit' })).toBeEnabled()
+  })
+})
+
+describe('Form guides', () => {
+  it('open from an exercise card during a workout: cues and the curated video', async () => {
+    const c = ctx()
+    const id = await startSession(c, { gymId: 'gym-1', programDayId: 'day-lower-a' })
+    renderScreen(<Logger />, { ctx: c, route: '/train/session/:id', path: `/train/session/${id}` })
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Form guide for Smith machine squat' }),
+    )
+    const sheet = await screen.findByRole('dialog', { name: 'Form: Smith machine squat' })
+    const guide = FORM_GUIDES['ex-smith-squat']!
+    for (const cue of guide.cues) expect(within(sheet).getByText(cue)).toBeInTheDocument()
+    const link = within(sheet).getByRole('link', { name: /Watch on YouTube/ })
+    expect(link).toHaveAttribute('href', guide.videoUrl)
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('are one tap from the Train menu’s Exercises entry', async () => {
+    renderScreen(<Train />, { ctx: ctx(), route: '/train' })
+    expect(await screen.findByRole('link', { name: /Exercises/ })).toHaveAttribute(
+      'href',
+      '/program/exercises?from=train',
+    )
+  })
+
+  it('show on the exercise page, where the user can set their own link', async () => {
+    const c = ctx()
+    renderScreen(<ExerciseEditor />, {
+      ctx: c,
+      route: '/program/exercises/:id',
+      path: '/program/exercises/ex-leg-press?from=train',
+    })
+    const link = await screen.findByRole('link', { name: /Watch on YouTube/ })
+    expect(link).toHaveAttribute('href', FORM_GUIDES['ex-leg-press']!.videoUrl)
+    expect(screen.getByRole('link', { name: /Back/ })).toHaveAttribute(
+      'href',
+      '/program/exercises?from=train',
+    )
+    const input = screen.getByLabelText('Your form video link')
+    await userEvent.type(input, 'https://www.youtube.com/watch?v=abcdefghijk')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(async () =>
+      expect((await c.db.exercises.get('ex-leg-press'))?.formUrl).toBe(
+        'https://www.youtube.com/watch?v=abcdefghijk',
+      ),
+    )
   })
 })

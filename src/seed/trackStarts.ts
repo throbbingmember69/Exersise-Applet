@@ -2,12 +2,13 @@
 // slot's default exercise at the default gym, loaded from the spec's "Start load" column (per hand
 // for dumbbells, the added load for the chin-up). Calibration (the first session sets the load and
 // isn't evaluated) covers the two "Set in week 1" slots and the six exercises whose rep ranges
-// changed, which keep their old load as the pre-fill (finding #41).
+// changed, which keep their old load as the pre-fill (finding #41). Spec content; the October 2026
+// update adds the starts of its new slots.
 import { gymScope, trackKey } from '@/domain/progression/keys'
 import type { TrackStartRow } from '@/domain/types'
-import { SEED_EXERCISES } from './exercises'
+import { SPEC_EXERCISES } from './exercises'
 import { SEED_EPOCH_MS } from './profile'
-import { SEED_GYM_ID, SEED_PROGRAM_SLOTS } from './program'
+import { SEED_GYM_ID, SPEC_PROGRAM_SLOTS } from './program'
 
 /** Start load (lb) per slot; null = "Set in week 1". */
 const START_LOADS: Readonly<Record<string, number | null>> = {
@@ -57,9 +58,9 @@ const RECALIBRATE_EXERCISE_IDS: ReadonlySet<string> = new Set([
   'ex-deadlift',
 ])
 
-const EXERCISES_BY_ID = new Map(SEED_EXERCISES.map((e) => [e.id, e]))
+const EXERCISES_BY_ID = new Map(SPEC_EXERCISES.map((e) => [e.id, e]))
 
-export const SEED_TRACK_STARTS: readonly TrackStartRow[] = SEED_PROGRAM_SLOTS.map((slot) => {
+export const SPEC_TRACK_STARTS: readonly TrackStartRow[] = SPEC_PROGRAM_SLOTS.map((slot) => {
   const exercise = EXERCISES_BY_ID.get(slot.defaultExerciseId)
   const startLoadLb = START_LOADS[slot.id]
   if (!exercise || startLoadLb === undefined) {

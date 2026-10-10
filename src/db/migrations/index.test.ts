@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { BACKUP_FORMAT, BACKUP_SCHEMA_VERSION } from '@/db/backupSchema'
+import { BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, parseBackup, TABLE_NAMES } from '@/db/backupSchema'
+import { seedRows } from '@/db/populate'
+import { SPEC_SEED } from '@/seed'
 import {
   MIGRATIONS,
   MigrationError,
   migrateBackup,
   migrateBackupWith,
   migrateTables,
+  v1ToV2 as realV1ToV2,
   type Migration,
 } from '.'
 
@@ -47,7 +50,7 @@ describe('migrateBackup', () => {
     )
   })
 
-  it('returns a current-version file unchanged (v1 is the identity)', () => {
+  it('returns a current-version file unchanged', () => {
     const raw = deepFreeze(file(BACKUP_SCHEMA_VERSION))
     expect(migrateBackup(raw)).toBe(raw)
   })
@@ -75,6 +78,56 @@ describe('migrateBackup', () => {
       const raw = file(version)
       expect(migrateBackup(raw)).toBe(raw)
     }
+  })
+})
+
+/** A v1 backup's tables: the spec seed as first shipped (no formUrl) plus some history. */
+function v1Tables(): Record<string, unknown[]> {
+  const rows = seedRows(SPEC_SEED) as unknown as Record<string, readonly Record<string, unknown>[]>
+  const tables: Record<string, unknown[]> = {}
+  for (const name of TABLE_NAMES) tables[name] = structuredClone([...(rows[name] ?? [])])
+  tables.exercises = tables.exercises!.map((e) => {
+    const { formUrl: _formUrl, ...v1 } = e as Record<string, unknown>
+    return v1
+  })
+  tables.nutritionEntries = [
+    {
+      date: '2026-10-03',
+      kcal: 2950,
+      proteinG: 180,
+      carbsG: null,
+      fatG: null,
+      steps: 9000,
+      updatedAt: 1,
+    },
+  ]
+  return tables
+}
+
+describe('v1 → v2 (October 2026 update)', () => {
+  it('turns a v1 backup into a valid v2 one, leaving history tables untouched', () => {
+    const tables = v1Tables()
+    const raw = deepFreeze(file(1, tables))
+    const out = migrateBackup(raw) as { schemaVersion: number; tables: Record<string, unknown[]> }
+    expect(out.schemaVersion).toBe(2)
+    for (const name of ['profile', 'sessions', 'setLogs', 'bodyEntries', 'nutritionEntries']) {
+      expect(out.tables[name], name).toBe(tables[name])
+    }
+    const result = parseBackup(out)
+    expect(result.ok ? [] : result.errors).toEqual([])
+    const slots = out.tables.programSlots as { id: string; defaultExerciseId: string }[]
+    expect(slots.find((s) => s.id === 'slot-upper-1')?.defaultExerciseId).toBe(
+      'ex-incline-smith-press',
+    )
+    expect(slots.some((s) => s.id === 'slot-lower-a-abduction')).toBe(true)
+  })
+
+  it('only adds the new field to a damaged file, for validation to report the rest', () => {
+    const tables = { exercises: [{ id: 'ex-1' }, 'junk'], programSlots: 'oops' }
+    expect(realV1ToV2.upgradeTables(tables)).toEqual({
+      exercises: [{ id: 'ex-1', formUrl: null }, 'junk'],
+      programSlots: 'oops',
+    })
   })
 })
 

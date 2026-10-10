@@ -22,6 +22,12 @@ export default function Train() {
             label="Weekly volume"
             hint="Sets per muscle vs the 10–20 band"
           />
+          <LinkRow
+            to="/program/exercises?from=train"
+            icon="play"
+            label="Exercises"
+            hint="Form videos and cues for every exercise"
+          />
         </LinkList>
       </Stack>
     </>

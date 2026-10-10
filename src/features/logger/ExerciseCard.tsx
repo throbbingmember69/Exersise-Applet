@@ -5,6 +5,7 @@ import type { UnitSystem } from '@/domain/types'
 import type { LoggerExerciseView } from '@/services/training/queries'
 import { startRestTimer } from '@/services/training/restTimerState'
 import { logSet, removeExercise, updateSet, voidSet } from '@/services/training/session'
+import FormGuideButton from '@/ui/FormGuide'
 import { formatDate, formatLoad, formatRegime, formatSets } from '@/ui/format'
 import { Badge, Button, Card, Toggle } from '@/ui/kit'
 import MassInput from '@/ui/MassInput'
@@ -86,6 +87,9 @@ export default function ExerciseCard({
           {ex.badge === 'set_load' ? <Badge tone="warn">Set load</Badge> : null}
           {ex.badge === 'recalibrate' ? <Badge tone="warn">Recalibrate</Badge> : null}
           {ex.done ? <Badge tone="good">Done</Badge> : null}
+          <FormGuideButton
+            exercise={{ id: ex.exerciseId, name: ex.exerciseName, formUrl: ex.formUrl }}
+          />
         </div>
       </div>
 
@@ -97,7 +101,7 @@ export default function ExerciseCard({
           </span>
         ) : null}
         {ex.adHoc
-          ? 'Added to this workout (not part of progression).'
+          ? 'Added to this workout: counts toward weekly volume; its loads don’t progress.'
           : suggestionWhy(ex.suggestion, `${formatMass(ex.prescription.stepLb, unit)} ${unit}`)}
       </p>
       {notices.map((n) => (

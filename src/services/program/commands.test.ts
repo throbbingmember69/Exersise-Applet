@@ -708,6 +708,7 @@ describe('exercises', () => {
       isMainLift: false,
       isFinisher: false,
       notes: '',
+      formUrl: null,
       archivedAt: null,
       createdAt: T0 + 1,
       updatedAt: T0 + 1,
@@ -1205,5 +1206,40 @@ describe('muscles', () => {
     await expectServiceError(createMuscle(c, 'forearms'), 'duplicate_name')
     await updateExercise(c, 'ex-db-hammer-curl', { muscleWeights: { biceps: 1, [id]: 0.5 } })
     expect(await weeklySets(c, id)).toBe(1)
+  })
+})
+
+describe('form video links', () => {
+  it('stores the user’s own http(s) link and clears it back to the curated guide', async () => {
+    const c = ctx()
+    const id = await createExercise(c, {
+      ...NEW_EXERCISE,
+      name: 'Belt squat',
+      formUrl: ' https://www.youtube.com/watch?v=abcdefghijk ',
+    })
+    expect((await c.db.exercises.get(id))?.formUrl).toBe(
+      'https://www.youtube.com/watch?v=abcdefghijk',
+    )
+    await updateExercise(c, 'ex-leg-press', { formUrl: 'http://example.com/leg-press' })
+    expect((await c.db.exercises.get('ex-leg-press'))?.formUrl).toBe('http://example.com/leg-press')
+    await updateExercise(c, 'ex-leg-press', { formUrl: '  ' })
+    expect((await c.db.exercises.get('ex-leg-press'))?.formUrl).toBeNull()
+    await updateExercise(c, 'ex-leg-press', { formUrl: null })
+    expect((await c.db.exercises.get('ex-leg-press'))?.formUrl).toBeNull()
+  })
+
+  it('refuses anything but a web link', async () => {
+    const c = ctx()
+    for (const formUrl of ['javascript:alert(1)', 'youtube video', 'ftp://x.test/a', 42]) {
+      await expectServiceError(
+        updateExercise(c, 'ex-leg-press', { formUrl: formUrl as string }),
+        'invalid_form_url',
+      )
+    }
+    await expectServiceError(
+      updateExercise(c, 'ex-leg-press', { formUrl: `https://x.test/${'a'.repeat(500)}` }),
+      'invalid_form_url',
+    )
+    expect((await c.db.exercises.get('ex-leg-press'))?.formUrl).toBeNull()
   })
 })

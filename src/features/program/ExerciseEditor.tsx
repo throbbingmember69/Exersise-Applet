@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { useCommand, useLive, useUnits } from '@/app/hooks'
 import type { Exercise, LoadType, MuscleWeight, Regime } from '@/domain/types'
 import { formatMassWithUnit } from '@/domain/units'
@@ -14,6 +14,7 @@ import {
 } from '@/services/program/commands'
 import { getExerciseDetail, getMuscles, type TrackStartView } from '@/services/program/queries'
 import { formatDate } from '@/ui/format'
+import { FormGuideContent } from '@/ui/FormGuide'
 import { Badge, Button, Card, EmptyState, Field, PageHeader, Stack, Toggle } from '@/ui/kit'
 import kit from '@/ui/kit.module.css'
 import MassInput from '@/ui/MassInput'
@@ -55,12 +56,14 @@ function blankDraft(): Draft {
     isMainLift: false,
     isFinisher: false,
     notes: '',
+    formUrl: null,
   }
 }
 
 export default function ExerciseEditor() {
   const { id = 'new' } = useParams()
   const isNew = id === 'new'
+  const back = useLibraryBack()
   const { data: detail } = useLive(
     (ctx) => (isNew ? Promise.resolve(null) : getExerciseDetail(ctx, id)),
     [id, isNew],
@@ -69,7 +72,7 @@ export default function ExerciseEditor() {
   if (!isNew && detail === null) {
     return (
       <>
-        <PageHeader title="Exercise" back="/program/exercises" />
+        <PageHeader title="Exercise" back={back} />
         <EmptyState title="Exercise not found" />
       </>
     )
@@ -88,6 +91,7 @@ function Editor({
   detail: Awaited<ReturnType<typeof getExerciseDetail>>
 }) {
   const navigate = useNavigate()
+  const back = useLibraryBack()
   const units = useUnits()
   const { data: muscles } = useLive((ctx) => getMuscles(ctx), [])
   const [d, setD] = useState<Draft>(initial)
@@ -132,6 +136,7 @@ function Editor({
       isMainLift: d.isMainLift,
       isFinisher: d.isFinisher,
       notes: d.notes,
+      formUrl: d.formUrl,
     }
     if (id === null) {
       const newId = await create.run(input)
@@ -143,8 +148,18 @@ function Editor({
 
   return (
     <>
-      <PageHeader title={id === null ? 'New exercise' : initial.name} back="/program/exercises" />
+      <PageHeader title={id === null ? 'New exercise' : initial.name} back={back} />
       <Stack>
+        {id !== null ? (
+          <Card title="Form">
+            <FormGuideContent exercise={{ id, name: initial.name, formUrl: initial.formUrl }} />
+            {initial.notes ? (
+              <p className={styles.hint} style={{ marginTop: 'var(--space-3)' }}>
+                {initial.notes}
+              </p>
+            ) : null}
+          </Card>
+        ) : null}
         {detail?.archived ? (
           <Card>
             <p>
@@ -229,6 +244,24 @@ function Editor({
               checked={d.isFinisher}
               onChange={(v) => set('isFinisher', v)}
             />
+            <Field
+              label="Your form video link"
+              htmlFor="ex-form-url"
+              hint="Optional. Replaces the picked video; leave empty to use it."
+            >
+              <input
+                id="ex-form-url"
+                className={kit.input}
+                type="url"
+                inputMode="url"
+                placeholder="https://www.youtube.com/watch?v=…"
+                value={d.formUrl ?? ''}
+                maxLength={500}
+                onChange={(e) =>
+                  set('formUrl', e.target.value.trim() === '' ? null : e.target.value)
+                }
+              />
+            </Field>
           </div>
         </Card>
 
@@ -323,6 +356,12 @@ function Editor({
       <TrackSheet track={track} exerciseId={id} onClose={() => setTrack(null)} />
     </>
   )
+}
+
+/** Back to the library, keeping where it was opened from (Train or More). */
+function useLibraryBack(): string {
+  const [params] = useSearchParams()
+  return params.get('from') === 'train' ? '/program/exercises?from=train' : '/program/exercises'
 }
 
 function FragmentRow({ name, children }: { name: string; children: React.ReactNode }) {

@@ -36,7 +36,8 @@ import type {
 } from '@/domain/types'
 
 export const BACKUP_FORMAT = 'exersise-applet-backup'
-export const BACKUP_SCHEMA_VERSION = 1
+/** Schema 2 (October 2026): `Exercise.formUrl`; v1 files are migrated on import. */
+export const BACKUP_SCHEMA_VERSION = 2
 
 /** Every persisted table. This list is the Dexie table-name contract. */
 export const TABLE_NAMES = [
@@ -202,6 +203,7 @@ const exerciseRow = z.object({
   isMainLift: bool,
   isFinisher: bool,
   notes: text,
+  formUrl: z.nullable(text),
   archivedAt: z.nullable(epochMs),
   createdAt: epochMs,
   updatedAt: epochMs,

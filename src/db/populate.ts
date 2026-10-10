@@ -29,8 +29,8 @@ export function seedRows(seed: SeedData = SEED) {
 }
 
 /** Dexie 'populate' handler. Only synchronous Dexie calls: the transaction must stay alive. */
-export function populateSeed(tx: Transaction): void {
-  for (const [table, rows] of Object.entries(seedRows())) {
+export function populateSeed(tx: Transaction, seed: SeedData = SEED): void {
+  for (const [table, rows] of Object.entries(seedRows(seed))) {
     // structuredClone: the seed constants are shared module state and must never be mutated.
     void tx.table(table).bulkAdd(structuredClone([...rows]))
   }
@@ -40,11 +40,11 @@ export function populateSeed(tx: Transaction): void {
  * Dexie 'ready' fallback: seed a database that exists but was never populated (e.g. a first
  * launch interrupted after the stores were created). A restored backup always has a profile.
  */
-export async function ensureSeeded(db: Dexie): Promise<void> {
+export async function ensureSeeded(db: Dexie, seed: SeedData = SEED): Promise<void> {
   if ((await db.table('profile').count()) > 0) return
-  await db.transaction('rw', Object.keys(seedRows()), async () => {
+  await db.transaction('rw', Object.keys(seedRows(seed)), async () => {
     if ((await db.table('profile').count()) > 0) return
-    for (const [table, rows] of Object.entries(seedRows())) {
+    for (const [table, rows] of Object.entries(seedRows(seed))) {
       await db.table(table).bulkPut(structuredClone([...rows]))
     }
   })

@@ -30,12 +30,13 @@ afterEach(async () => {
 
 describe('first-launch seed', () => {
   it('writes the spec profile, baseline, library, program and start loads', async () => {
-    const c = ctx()
+    // The live first-launch seed: the spec's program plus the October 2026 update.
+    const c = ctx({ seed: true })
     expect(await c.db.profile.toArray()).toEqual([SEED.profile])
     expect(await c.db.bodyEntries.toArray()).toEqual([...SEED.bodyEntries])
     expect(await c.db.exercises.count()).toBe(SEED.exercises.length)
     expect(await c.db.programDays.count()).toBe(5)
-    expect(await c.db.programSlots.count()).toBe(34)
+    expect(await c.db.programSlots.count()).toBe(36)
     expect(await c.db.trackStarts.count()).toBe(SEED.trackStarts.length)
     expect(await c.db.muscles.count()).toBe(13)
     expect(await c.db.gyms.count()).toBe(1)

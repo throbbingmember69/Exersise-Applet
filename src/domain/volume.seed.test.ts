@@ -2,7 +2,7 @@
 // (quads 13.5, chest 14, triceps 16)", checked against every row of the spec's "Weekly totals for
 // the revised plan" table.
 import { describe, expect, it } from 'vitest'
-import { SEED } from '@/seed'
+import { SPEC_SEED } from '@/seed'
 import { DEFAULT_SETTINGS } from './settings/registry'
 import type { Exercise, MuscleWeights, ProgramSlot } from './types'
 import { muscleFlags, overSessionCap, plannedDayVolume, plannedWeeklyVolume } from './volume'
@@ -15,7 +15,7 @@ function deepFreeze<T>(x: T): T {
   return x
 }
 
-const seed = deepFreeze(SEED)
+const seed = deepFreeze(SPEC_SEED)
 const exercises = new Map(seed.exercises.map((e) => [e.id, e]))
 const resolveDefault = (slot: ProgramSlot): Exercise | undefined =>
   exercises.get(slot.defaultExerciseId)
