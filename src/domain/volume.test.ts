@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseLocalDate } from './dates'
 import { DEFAULT_SETTINGS } from './settings/registry'
-import type { EpochMs, Muscle, MuscleWeights, SessionStatus } from './types'
+import type { EpochMs, LocalDate, Muscle, MuscleWeights, SessionStatus } from './types'
 import {
   countsTowardVolume,
   countWorkingSets,
@@ -430,5 +430,45 @@ describe('overSessionCap', () => {
     expect(overSessionCap(byMuscle, DEFAULT_SETTINGS.sessionCap)).toEqual(['quads', 'back'])
     expect(overSessionCap(byMuscle, 20)).toEqual([])
     expect(overSessionCap(new Map(), 11)).toEqual([])
+  })
+})
+
+describe('muscleFlags before a muscle was tracked', () => {
+  const settings = { weeklyVolumeMin: 10, weeklyVolumeMax: 20 }
+  const muscle = (id: string, trackedFrom: string | null) => ({
+    id,
+    bandMin: null,
+    bandMax: null,
+    exemptLow: false,
+    archivedAt: null,
+    trackedFrom: trackedFrom as LocalDate | null,
+  })
+  it('gives no flag for weeks that ended before trackedFrom', () => {
+    const muscles = [muscle('upper_back', '2026-10-19'), muscle('quads', null)]
+    const week = { weekComplete: true, deloadWeek: false }
+    const before = muscleFlags(new Map(), muscles, settings, {
+      ...week,
+      weekEnd: '2026-10-18' as LocalDate,
+    })
+    expect(Object.fromEntries(before)).toEqual({ upper_back: null, quads: 'low' })
+    const after = muscleFlags(new Map(), muscles, settings, {
+      ...week,
+      weekEnd: '2026-10-25' as LocalDate,
+    })
+    expect(Object.fromEntries(after)).toEqual({ upper_back: 'low', quads: 'low' })
+  })
+
+  it('shows ok/high but never low for a week tracked only from mid-week', () => {
+    const muscles = [muscle('upper_back', '2026-10-21')]
+    const week = {
+      weekComplete: true,
+      deloadWeek: false,
+      weekStart: '2026-10-19' as LocalDate,
+      weekEnd: '2026-10-25' as LocalDate,
+    }
+    expect(muscleFlags(new Map(), muscles, settings, week).get('upper_back')).toBeNull()
+    expect(
+      muscleFlags(new Map([['upper_back', 12]]), muscles, settings, week).get('upper_back'),
+    ).toBe('ok')
   })
 })

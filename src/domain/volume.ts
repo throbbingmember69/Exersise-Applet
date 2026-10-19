@@ -177,19 +177,38 @@ export function volumeFlag(
   return ctx.exemptLow || !ctx.weekComplete || ctx.deloadWeek ? null : 'low'
 }
 
-/** Flags for every active muscle, in the given order; a muscle with no volume counts as 0. */
+/**
+ * Flags for every active muscle, in the given order; a muscle with no volume counts as 0. With the
+ * week's dates, a muscle not yet tracked by the week's end (its `trackedFrom` is later) gets no
+ * flag, and one tracked only from mid-week can show 'ok' or 'high' but not 'low' (its earlier
+ * sessions were logged before it existed).
+ */
 export function muscleFlags(
   byMuscle: MuscleVolume,
-  muscles: readonly Pick<Muscle, 'id' | 'bandMin' | 'bandMax' | 'exemptLow' | 'archivedAt'>[],
+  muscles: readonly (Pick<Muscle, 'id' | 'bandMin' | 'bandMax' | 'exemptLow' | 'archivedAt'> & {
+    trackedFrom?: LocalDate | null
+  })[],
   s: Pick<Settings, 'weeklyVolumeMin' | 'weeklyVolumeMax'>,
-  week: Pick<VolumeFlagContext, 'weekComplete' | 'deloadWeek'>,
+  week: Pick<VolumeFlagContext, 'weekComplete' | 'deloadWeek'> & {
+    weekStart?: LocalDate
+    weekEnd?: LocalDate
+  },
 ): Map<MuscleId, VolumeFlag | null> {
   const flags = new Map<MuscleId, VolumeFlag | null>()
   for (const m of muscles) {
     if (m.archivedAt !== null) continue
+    const from = m.trackedFrom ?? null
+    if (from && week.weekEnd && compareLocalDate(week.weekEnd, from) < 0) {
+      flags.set(m.id, null)
+      continue
+    }
+    const partial = !!from && !!week.weekStart && compareLocalDate(week.weekStart, from) < 0
     flags.set(
       m.id,
-      volumeFlag(byMuscle.get(m.id) ?? 0, resolveBand(m, s), { ...week, exemptLow: m.exemptLow }),
+      volumeFlag(byMuscle.get(m.id) ?? 0, resolveBand(m, s), {
+        ...week,
+        exemptLow: m.exemptLow || partial,
+      }),
     )
   }
   return flags

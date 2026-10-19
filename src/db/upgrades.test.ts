@@ -18,6 +18,7 @@ afterEach(async () => {
 })
 
 const PROGRAM_TABLES = new Set([
+  'muscles',
   'exercises',
   'programSlots',
   'gymSlotOverrides',
@@ -80,12 +81,12 @@ const byKey = (table: string, rows: Row[]) => {
   return [...rows].sort((a, b) => String(a[key]).localeCompare(String(b[key])))
 }
 
-describe('Dexie upgrade v1 → v2', () => {
+describe('Dexie upgrades v1 → v2 → v3', () => {
   it('keeps every history row byte-for-byte and updates only the library and program', async () => {
     const { name, rows } = await v1DatabaseWithHistory()
     const db = new AppDB(name)
     await db.open()
-    expect(db.verno).toBe(2)
+    expect(db.verno).toBe(3)
 
     for (const table of TABLE_NAMES) {
       if (PROGRAM_TABLES.has(table)) continue
@@ -96,13 +97,33 @@ describe('Dexie upgrade v1 → v2', () => {
     expect(await db.sessions.count()).toBe(1)
     expect(await db.setLogs.count()).toBe(2)
 
-    // Library: everything kept (formUrl added), the cable press archived, the catalog added.
+    // Library: everything kept (formUrl added; v3 re-weights back work and promotes the shrug),
+    // the cable press archived, both catalogs added.
     const exercises = await db.exercises.toArray()
     for (const old of rows.exercises!) {
       const now = exercises.find((e) => e.id === old.id)!
-      const { archivedAt: _a, updatedAt: _u, ...same } = old
+      const {
+        archivedAt: _a,
+        updatedAt: _u,
+        muscleWeights: _w,
+        notes: _n,
+        isFinisher: _f,
+        ...same
+      } = old
       expect(now, String(old.id)).toMatchObject({ ...same, formUrl: null })
     }
+    expect((await db.exercises.get('ex-rocking-pulldown'))?.muscleWeights).toEqual({
+      back: 1,
+      upper_back: 0.5,
+      biceps: 0.5,
+    })
+    expect((await db.exercises.get('ex-machine-barbell-row'))?.muscleWeights).toEqual({
+      upper_back: 1,
+      back: 0.5,
+      biceps: 0.5,
+      rear_delts: 0.5,
+    })
+    expect(await db.exercises.get('ex-cable-shrug')).toBeDefined()
     expect((await db.exercises.get('ex-incline-cable-press'))?.archivedAt).not.toBeNull()
     expect(await db.exercises.get('ex-hip-abduction')).toBeDefined()
     expect(exercises.filter((e) => e.name === 'Belt squat')).toHaveLength(1)
@@ -126,9 +147,20 @@ describe('Dexie upgrade v1 → v2', () => {
       today: '2026-10-03' as never,
       gymId: 'gym-1',
     })
-    const glutes = dash.muscles.find((m) => m.muscleId === 'glutes')!
-    expect(glutes.planned).toBe(16)
-    expect(dash.muscles.find((m) => m.muscleId === 'chest')!.logged).toBe(2)
+    const muscle = (id: string) => dash.muscles.find((m) => m.muscleId === id)!
+    expect(muscle('glutes').planned).toBe(16)
+    expect(muscle('chest').logged).toBe(2)
+
+    // v3: Back became Lats, Upper back and Traps are tracked, and the back plan grew.
+    expect(await db.muscles.get('back')).toMatchObject({ name: 'Lats', lagging: true })
+    expect(await db.muscles.get('upper_back')).toMatchObject({ name: 'Upper back', lagging: false })
+    expect(await db.muscles.get('traps')).toMatchObject({ exemptLow: false, lagging: true })
+    expect([muscle('back').planned, muscle('upper_back').planned, muscle('traps').planned]).toEqual(
+      // This gym swaps the Pull-day rocking pulldown (3 lat sets) for a face pull.
+      [9, 12.5, 6],
+    )
+    // Past weeks don't flag the muscles that weren't tracked yet.
+    expect([muscle('upper_back').loggedFlag, muscle('traps').loggedFlag]).toEqual([null, null])
     db.close()
   })
 
@@ -137,7 +169,7 @@ describe('Dexie upgrade v1 → v2', () => {
     names.push(name)
     const db = new AppDB(name)
     await db.open()
-    expect(db.verno).toBe(2)
+    expect(db.verno).toBe(3)
     expect((await db.programSlots.get('slot-upper-1'))?.defaultExerciseId).toBe(
       'ex-incline-smith-press',
     )

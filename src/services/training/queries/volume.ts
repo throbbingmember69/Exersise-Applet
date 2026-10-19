@@ -162,6 +162,8 @@ export async function getVolumeDashboard(
   const loggedFlags = muscleFlags(loggedByMuscle, muscles, settings, {
     weekComplete: complete,
     deloadWeek: isDeloadWeek,
+    weekStart: start,
+    weekEnd: end,
   })
   const sessionIds = week?.sessionIds ?? []
   const sessionWarnings = sessionIds.flatMap((id): SessionCapWarning[] => {

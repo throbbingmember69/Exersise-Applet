@@ -36,8 +36,11 @@ import type {
 } from '@/domain/types'
 
 export const BACKUP_FORMAT = 'exersise-applet-backup'
-/** Schema 2 (October 2026): `Exercise.formUrl`; v1 files are migrated on import. */
-export const BACKUP_SCHEMA_VERSION = 2
+/**
+ * Schema 2 (October 10 2026): `Exercise.formUrl`. Schema 3 (October 18 2026): `Muscle.trackedFrom`.
+ * Older files are migrated on import.
+ */
+export const BACKUP_SCHEMA_VERSION = 3
 
 /** Every persisted table. This list is the Dexie table-name contract. */
 export const TABLE_NAMES = [
@@ -179,6 +182,7 @@ const muscleRow = z.object({
   bandMax: z.nullable(nonNegative),
   exemptLow: bool,
   lagging: bool,
+  trackedFrom: z.nullable(localDate),
   archivedAt: z.nullable(epochMs),
 })
 

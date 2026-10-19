@@ -21,8 +21,9 @@ import { SEED_BODY_ENTRY, SEED_PROFILE } from './profile'
 import { SEED_GYMS, SPEC_PROGRAM_DAYS, SPEC_PROGRAM_SLOTS } from './program'
 import { SPEC_TRACK_STARTS } from './trackStarts'
 import { applyUpdate2026_10 } from './update2026-10'
+import { applyUpdate2026_10b } from './update2026-10b'
 
-export const SEED_VERSION = 2
+export const SEED_VERSION = 3
 
 export interface SeedData {
   profile: UserProfile
@@ -51,8 +52,11 @@ export const SPEC_SEED: SeedData = {
   gymExerciseSettings: [],
 }
 
-/** What a first launch writes: the spec seed plus the October 2026 update. */
-export const SEED: SeedData = { ...SPEC_SEED, ...applyUpdate2026_10(SPEC_SEED) }
+/** What a first launch writes: the spec seed plus the October 2026 updates, in order. */
+export const SEED: SeedData = {
+  ...SPEC_SEED,
+  ...applyUpdate2026_10b({ ...SPEC_SEED, ...applyUpdate2026_10(SPEC_SEED) }),
+}
 
 export const SEED_EXERCISES = SEED.exercises
 export const SEED_PROGRAM_DAYS = SEED.programDays
@@ -78,3 +82,9 @@ export {
   INCLINE_CABLE_PRESS_ID,
   type ProgramTables,
 } from './update2026-10'
+export {
+  applyUpdate2026_10b,
+  BACK_FOCUS_EXERCISES,
+  BACK_FOCUS_TRACKED_FROM,
+  type BackFocusTables,
+} from './update2026-10b'

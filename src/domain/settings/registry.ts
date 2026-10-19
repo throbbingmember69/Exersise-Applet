@@ -620,6 +620,18 @@ export const SETTINGS_REGISTRY = [
     help: 'Suggests +1 set for muscles you mark as lagging (spec: every 3–4 weeks).',
   },
   {
+    key: 'rampMaxSetsPerExercise',
+    label: 'Bulk ramp: most sets on one exercise',
+    group: 'volume',
+    tag: 'Heuristic',
+    unit: 'sets',
+    default: 5,
+    min: 2,
+    max: 10,
+    step: 1,
+    help: 'A lagging muscle’s extra set goes to an exercise with fewer sets than this; past it, add another exercise instead.',
+  },
+  {
     key: 'trainingWeekStartDay',
     label: 'Training week starts on',
     group: 'volume',

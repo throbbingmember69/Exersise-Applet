@@ -1201,6 +1201,8 @@ describe('muscles', () => {
       bandMax: null,
       exemptLow: false,
       lagging: false,
+      // Earlier weeks had no sets for it, so they don't flag 'low'.
+      trackedFrom: '2026-09-24',
       archivedAt: null,
     })
     await expectServiceError(createMuscle(c, 'forearms'), 'duplicate_name')

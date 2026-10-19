@@ -29,13 +29,13 @@ import type {
 } from '@/domain/types'
 import { SEED, type SeedData } from '@/seed'
 import { ensureSeeded, populateSeed } from './populate'
-import { upgradeToV2 } from './upgrades'
+import { upgradeToV2, upgradeToV3 } from './upgrades'
 
 /** Unique per origin: throbbingmember69.github.io is shared by all of the user's Pages sites. */
 export const DB_NAME = 'exersise-applet'
 
 /** Current Dexie schema version. Backups record it; older backups are migrated on import. */
-export const DB_SCHEMA_VERSION = 2
+export const DB_SCHEMA_VERSION = 3
 
 /** Table names in backup/export order. Must match TABLE_NAMES in db/backupSchema.ts. */
 export const DB_TABLES = [
@@ -121,6 +121,10 @@ export class AppDB extends Dexie {
     this.version(2)
       .stores({})
       .upgrade((tx) => upgradeToV2(tx))
+    // v3 (October 18 2026): no index changes; Muscle.trackedFrom and the back-focus update.
+    this.version(3)
+      .stores({})
+      .upgrade((tx) => upgradeToV3(tx))
     if (opts.seed !== false) {
       const seed = typeof opts.seed === 'object' ? opts.seed : SEED
       this.on('populate', (tx) => populateSeed(tx, seed))

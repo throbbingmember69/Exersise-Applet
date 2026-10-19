@@ -48,5 +48,6 @@ export const SEED_MUSCLES: readonly Muscle[] = SEED_MUSCLE_IDS.map((id, i) => ({
   bandMax: null,
   exemptLow: EXEMPT_LOW.has(id),
   lagging: false,
+  trackedFrom: null,
   archivedAt: null,
 }))

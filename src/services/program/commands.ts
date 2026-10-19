@@ -26,7 +26,7 @@ import {
   type TrackStartRow,
   type Weekday,
 } from '@/domain/types'
-import type { ServiceCtx } from '../context'
+import { today, type ServiceCtx } from '../context'
 import { ServiceError } from '../errors'
 import { loadSettings } from '../settings'
 import { lockedTracks, readExerciseSessionRows } from './tracks'
@@ -779,6 +779,8 @@ export async function createMuscle(ctx: ServiceCtx, name: string): Promise<strin
       bandMax: null,
       exemptLow: false,
       lagging: false,
+      // Earlier weeks had no sets for it: they shouldn't read as 'low'.
+      trackedFrom: today(ctx),
       archivedAt: null,
     })
   })

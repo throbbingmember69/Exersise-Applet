@@ -4,6 +4,7 @@ import type { Exercise, ProgramSlot } from '@/domain/types'
 import { overSessionCap, plannedDayVolume, plannedWeeklyVolume } from '@/domain/volume'
 import { CATALOG_2026_10 } from './catalog'
 import { SEED, SPEC_SEED } from './index'
+import { applyUpdate2026_10b } from './update2026-10b'
 import {
   ABDUCTION_SLOTS,
   applyUpdate2026_10,
@@ -112,8 +113,9 @@ describe('applyUpdate2026_10 on the spec seed', () => {
     expect(applyUpdate2026_10(after)).toEqual(after)
   })
 
-  it('is what a first launch writes', () => {
-    expect(tablesOf(SEED)).toEqual(after)
+  it('is what a first launch writes, before the back-focus update', () => {
+    const later = applyUpdate2026_10b({ ...after, muscles: SPEC_SEED.muscles })
+    expect(tablesOf(SEED)).toEqual(tablesOf(later))
   })
 })
 
@@ -194,10 +196,11 @@ describe('applyUpdate2026_10 respects what the user already changed', () => {
   })
 })
 
-describe('the updated seed program', () => {
-  const exercises = new Map(SEED.exercises.map((e) => [e.id, e]))
+describe('the program after the October 10 update', () => {
+  const october = applyUpdate2026_10(tablesOf(SPEC_SEED))
+  const exercises = new Map(october.exercises.map((e) => [e.id, e]))
   const resolve = (slot: ProgramSlot) => exercises.get(slot.defaultExerciseId)
-  const planned = plannedWeeklyVolume(SEED.programSlots, resolve, SEED.programDays)
+  const planned = plannedWeeklyVolume(october.programSlots, resolve, october.programDays)
 
   it('plans 100 sets a week: glutes 16 with hip abduction, chest unchanged at 14', () => {
     expect(planned.totalSets).toBe(100)
@@ -208,8 +211,8 @@ describe('the updated seed program', () => {
   })
 
   it('keeps every day under the per-session cap', () => {
-    for (const day of SEED.programDays) {
-      const slots = SEED.programSlots.filter((s) => s.programDayId === day.id)
+    for (const day of october.programDays) {
+      const slots = october.programSlots.filter((s) => s.programDayId === day.id)
       expect(
         overSessionCap(plannedDayVolume(slots, resolve).byMuscle, DEFAULT_SETTINGS.sessionCap),
       ).toEqual([])

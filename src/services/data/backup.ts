@@ -115,11 +115,13 @@ export function backupFileName(date: LocalDate): string {
  * from when the file was made.
  */
 export async function importBackup(
-  ctx: Pick<ServiceCtx, 'db'>,
+  ctx: Pick<ServiceCtx, 'db'> & Partial<Pick<ServiceCtx, 'now'>>,
   jsonText: string,
   opts: ImportOptions = {},
 ): Promise<ImportResult> {
-  const backup = validateBackupText(jsonText)
+  const backup = validateBackupText(jsonText, {
+    today: ctx.now ? localDateOf(ctx.now()) : undefined,
+  })
   const incoming = historyCounts(backup.tables)
   const { db } = ctx
   try {
@@ -153,8 +155,11 @@ export async function importBackup(
   }
 }
 
-/** Parse, migrate and validate backup text without touching the database. */
-export function validateBackupText(jsonText: string): Backup {
+/**
+ * Parse, migrate and validate backup text without touching the database. `today` is the restore
+ * day (an old backup's migration counts newly tracked muscles from it).
+ */
+export function validateBackupText(jsonText: string, opts: { today?: LocalDate } = {}): Backup {
   let raw: unknown
   try {
     raw = JSON.parse(jsonText)
@@ -164,7 +169,7 @@ export function validateBackupText(jsonText: string): Backup {
   }
   let migrated: unknown
   try {
-    migrated = migrateBackup(raw)
+    migrated = migrateBackup(raw, { today: opts.today })
   } catch (e) {
     if (e instanceof MigrationError && e.kind === 'newer_version') {
       throw new ServiceError('newer_version', e.message, {

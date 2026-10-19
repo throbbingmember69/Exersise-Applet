@@ -83,6 +83,11 @@ export interface Muscle {
   exemptLow: boolean
   /** User marks a muscle as lagging to get add-a-set prompts on a bulk. */
   lagging: boolean
+  /**
+   * First day the muscle was tracked as it is now (added, or split off another group); weeks that
+   * ended before it get no flag. null = always tracked.
+   */
+  trackedFrom: LocalDate | null
   archivedAt: EpochMs | null
 }
 

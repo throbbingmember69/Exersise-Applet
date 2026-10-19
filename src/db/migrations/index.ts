@@ -9,16 +9,24 @@
 //   4. add `db.version(N + 1)` in db/schema.ts with an upgrade callback (see db/upgrades.ts).
 // Steps are pure: they return new objects and never mutate their input.
 import { BACKUP_FORMAT, BACKUP_SCHEMA_VERSION } from '@/db/backupSchema'
+import type { LocalDate } from '@/domain/types'
 import { applyUpdate2026_10, type ProgramTables } from '@/seed/update2026-10'
+import { applyUpdate2026_10b, type BackFocusTables } from '@/seed/update2026-10b'
 
 /** Raw (unvalidated) rows per table name, as found in a backup file of some older version. */
 export type RawTables = Readonly<Record<string, unknown>>
+
+/** What a step may know about when it runs (passed in, so steps stay pure). */
+export interface MigrationContext {
+  /** The local day of the upgrade or restore. */
+  today?: LocalDate
+}
 
 export interface Migration {
   /** Schema version this step reads; it produces version `from + 1`. */
   from: number
   /** Pure transform of every table's rows. */
-  upgradeTables: (tables: RawTables) => RawTables
+  upgradeTables: (tables: RawTables, ctx?: MigrationContext) => RawTables
 }
 
 /** The tables the October 2026 update reads and writes; every other table passes through. */
@@ -59,8 +67,47 @@ export const v1ToV2: Migration = {
   },
 }
 
+/** The tables the back-focus update reads and writes. */
+export const V3_TABLES = [
+  ...V2_PROGRAM_TABLES,
+  'muscles',
+] as const satisfies readonly (keyof BackFocusTables)[]
+
+/**
+ * v2 → v3 (October 18 2026): `Muscle.trackedFrom`, plus the back-focus update of
+ * seed/update2026-10b.ts (Back → Lats + Upper back, traps tracked, shrugs/Y-raise/pulldown slots).
+ * A damaged backup only gets the new field.
+ */
+export const v2ToV3: Migration = {
+  from: 2,
+  upgradeTables: (tables, ctx = {}) => {
+    const lists = V3_TABLES.map((name) => tables[name])
+    if (lists.every((rows) => Array.isArray(rows) && rows.every(isPlainObject))) {
+      try {
+        const input = Object.fromEntries(V3_TABLES.map((n) => [n, tables[n]]))
+        return {
+          ...tables,
+          ...applyUpdate2026_10b(input as unknown as BackFocusTables, {
+            trackedFrom: ctx.today,
+          }),
+        }
+      } catch {
+        // Rows that don't look like v2 rows: fall through to the field-only change.
+      }
+    }
+    const muscles = tables.muscles
+    if (!Array.isArray(muscles)) return tables
+    return {
+      ...tables,
+      muscles: muscles.map((m: unknown) =>
+        isPlainObject(m) && !('trackedFrom' in m) ? { ...m, trackedFrom: null } : m,
+      ),
+    }
+  },
+}
+
 /** The chain, oldest first. */
-export const MIGRATIONS: readonly Migration[] = [v1ToV2]
+export const MIGRATIONS: readonly Migration[] = [v1ToV2, v2ToV3]
 
 export type MigrationErrorKind = 'newer_version' | 'missing_step'
 
@@ -83,8 +130,8 @@ export class MigrationError extends Error {
  * `parseBackup` can explain what's wrong with it. Throws MigrationError for a version newer than
  * this app understands.
  */
-export function migrateBackup(raw: unknown): unknown {
-  return migrateBackupWith(raw, MIGRATIONS, BACKUP_SCHEMA_VERSION)
+export function migrateBackup(raw: unknown, ctx: MigrationContext = {}): unknown {
+  return migrateBackupWith(raw, MIGRATIONS, BACKUP_SCHEMA_VERSION, ctx)
 }
 
 /** `migrateBackup` with an explicit chain and target (lets tests exercise a multi-step chain). */
@@ -92,6 +139,7 @@ export function migrateBackupWith(
   raw: unknown,
   chain: readonly Migration[],
   targetVersion: number,
+  ctx: MigrationContext = {},
 ): unknown {
   if (!isPlainObject(raw) || raw.format !== BACKUP_FORMAT) return raw
   const version = raw.schemaVersion
@@ -109,7 +157,7 @@ export function migrateBackupWith(
   return {
     ...raw,
     schemaVersion: targetVersion,
-    tables: migrateTables(raw.tables, version, targetVersion, chain),
+    tables: migrateTables(raw.tables, version, targetVersion, chain, ctx),
   }
 }
 
@@ -119,6 +167,7 @@ export function migrateTables(
   from: number,
   to: number,
   chain: readonly Migration[] = MIGRATIONS,
+  ctx: MigrationContext = {},
 ): RawTables {
   let out = tables
   for (let v = from; v < to; v++) {
@@ -131,7 +180,7 @@ export function migrateTables(
         `No migration from schema ${v} to ${v + 1}; this backup can't be restored.`,
       )
     }
-    out = step.upgradeTables(out)
+    out = step.upgradeTables(out, ctx)
   }
   return out
 }

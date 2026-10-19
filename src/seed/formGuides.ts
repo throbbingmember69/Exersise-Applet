@@ -765,6 +765,40 @@ export const FORM_GUIDES: Readonly<Record<string, FormGuide>> = {
       'Don’t pull with your arms or yank your neck; keep your hips on the seat.',
     ],
   },
+  // Back-focus update (2026-10-18), checked through oEmbed the same day.
+  'ex-incline-db-y-raise': {
+    videoUrl: 'https://www.youtube.com/watch?v=lXp16YozXgk',
+    title: 'How to Perform Dumbbell Y Raise | Strengthen Your Lower Traps',
+    channel: 'Physique Development',
+    cues: [
+      'Lie chest-down on a 30–45° incline and let light dumbbells hang straight down.',
+      'Set your shoulder blades down and back before the arms start to move.',
+      'Raise your arms up and out into a Y, thumbs pointing to the ceiling.',
+      'Pause near ear height, lower slowly, and keep your chest on the pad without swinging.',
+    ],
+  },
+  'ex-cable-y-raise': {
+    videoUrl: 'https://www.youtube.com/watch?v=NBkMIWWkIKQ',
+    title: 'How To Cable Y-Raise (Grow Your Medial Delts) | Form Tutorial',
+    channel: 'Physique Development',
+    cues: [
+      'Set both pulleys low, cross the cables, and hold each handle in the opposite hand.',
+      'Hinge slightly at the hips and start with your hands crossed low in front of you.',
+      'Sweep your arms up and out into a Y, keeping a slight bend in the elbows.',
+      'Keep shoulders away from your ears and ribs down; lower against the cable slowly.',
+    ],
+  },
+  'ex-cable-shrug': {
+    videoUrl: 'https://www.youtube.com/watch?v=C6sYjDFuq9I',
+    title: 'How To Build Bigger Traps: Optimal Training Explained',
+    channel: 'Jeff Nippard',
+    cues: [
+      'Stand between low pulleys, arms straight and about 30° out to the sides.',
+      'Shrug straight up toward your ears, letting the shoulder blades rotate up and out.',
+      'Keep your elbows straight and don’t roll your shoulders; just lift and lower.',
+      'Hold the top for a second, then lower slowly into a full stretch.',
+    ],
+  },
 }
 
 /** A YouTube search for the exercise's form (for exercises without a curated guide). */

@@ -109,7 +109,7 @@ describe('v1 → v2 (October 2026 update)', () => {
     const tables = v1Tables()
     const raw = deepFreeze(file(1, tables))
     const out = migrateBackup(raw) as { schemaVersion: number; tables: Record<string, unknown[]> }
-    expect(out.schemaVersion).toBe(2)
+    expect(out.schemaVersion).toBe(3)
     for (const name of ['profile', 'sessions', 'setLogs', 'bodyEntries', 'nutritionEntries']) {
       expect(out.tables[name], name).toBe(tables[name])
     }
@@ -120,6 +120,19 @@ describe('v1 → v2 (October 2026 update)', () => {
       'ex-incline-smith-press',
     )
     expect(slots.some((s) => s.id === 'slot-lower-a-abduction')).toBe(true)
+  })
+
+  it('counts the newly tracked muscle groups from the restore day', () => {
+    const out = migrateBackup(file(1, v1Tables()), { today: '2026-11-03' as never }) as {
+      tables: { muscles: { id: string; trackedFrom: string | null }[] }
+    }
+    const from = (id: string) => out.tables.muscles.find((m) => m.id === id)?.trackedFrom
+    expect([from('back'), from('upper_back'), from('traps'), from('quads')]).toEqual([
+      '2026-11-03',
+      '2026-11-03',
+      '2026-11-03',
+      null,
+    ])
   })
 
   it('only adds the new field to a damaged file, for validation to report the rest', () => {

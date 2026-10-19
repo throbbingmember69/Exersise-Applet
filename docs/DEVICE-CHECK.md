@@ -22,6 +22,12 @@ Things only a real phone can confirm. Open **https://throbbingmember69.github.io
 - [ ] Train → Exercises → any exercise shows its form cues; **Play video** plays it inside the app (full screen works), and **Open in YouTube** opens the YouTube app. In a workout, the **Form** button on a card does the same.
 - [ ] Weekly volume → Planned shows glutes 16.
 
+## After the back-focus update (October 18)
+- [ ] History, Progress and Body look the same as before.
+- [ ] Weekly volume → Planned shows **Lats 12, Upper back 12.5, Traps 6** (110 sets).
+- [ ] Push shows a **Barbell shrug** after lateral raises; Pull shows **Rocking pulldown 3 sets** then an **Incline DB Y-raise**; Upper shows a **Lat pulldown** after the incline Smith press and a **Cable shrug** after lateral raises. New exercises start with "Find a load".
+- [ ] During a bulk, about 3 weeks after the update, Today shows **Grow lagging muscles** with an "Add set" for Lats and Traps.
+
 ## Data
 - [ ] More → Data & backup → **Save backup file** → share to Drive (or Files) and check the file is there.
 - [ ] **Export CSV** → Workout sets → opens in Sheets.

@@ -17,6 +17,7 @@ import { formatDate, formatGrams, formatKcal } from '@/ui/format'
 import { Badge, ButtonLink, Card, LinkList, LinkRow, PageHeader, Stack, Stat } from '@/ui/kit'
 import Spinner from '@/ui/Spinner'
 import styles from './today.module.css'
+import VolumeRampCard from './VolumeRampCard'
 
 const PHASE_NAME = { bulk: 'Lean bulk', maintenance: 'Maintenance', cut: 'Cut' } as const
 
@@ -107,6 +108,8 @@ export default function Today() {
             </LinkList>
           </Card>
         ) : null}
+
+        <VolumeRampCard today={today} />
 
         {/* ── Check-in and phase prompts ───────────── */}
         {checkIns?.pending ? (
