@@ -8,6 +8,7 @@ import { Badge, Button, ButtonLink, Card, EmptyState, PageHeader, Stack, type To
 import kit from '@/ui/kit.module.css'
 import Spinner from '@/ui/Spinner'
 import { formatMass } from '@/domain/units'
+import CardioCard from './CardioCard'
 import styles from './logger.module.css'
 import { deloadReasonText } from './text'
 
@@ -173,6 +174,8 @@ export default function Summary() {
               .join(' · ')}
           </p>
         </Card>
+
+        <CardioCard sessionId={summary.sessionId} editable={false} />
 
         <ButtonLink to="/" variant="primary" block>
           Done

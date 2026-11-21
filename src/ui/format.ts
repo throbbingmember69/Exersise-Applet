@@ -1,6 +1,14 @@
 // Display formatting shared by every screen (docs/UI.md "Numbers and copy").
 import { formatMass } from '@/domain/units'
-import type { LoadType, LocalDate, Regime, UnitSystem } from '@/domain/types'
+import type {
+  CardioIntensity,
+  CardioLog,
+  CardioModality,
+  LoadType,
+  LocalDate,
+  Regime,
+  UnitSystem,
+} from '@/domain/types'
 
 const dateFmt = new Intl.DateTimeFormat(undefined, {
   weekday: 'short',
@@ -110,4 +118,34 @@ export function formatSets(
     formatLoad(lb, { ...ex, perHand: false }, unit).replace(` ${unit}`, '')
   if (same) return `${load(first.loadLb)} ${unit} × ${sets.map((s) => s.reps).join(', ')}`
   return sets.map((s) => `${load(s.loadLb)}×${s.reps}`).join(', ') + ` ${unit}`
+}
+
+/** Cardio machines' names. */
+export const CARDIO_MODALITY_LABELS: Readonly<Record<CardioModality, string>> = {
+  bike: 'Bike',
+  incline_walk: 'Incline walk',
+  elliptical: 'Elliptical',
+  rower: 'Rower',
+  stair: 'Stair climber',
+  run: 'Run',
+  other: 'Other',
+}
+
+export const CARDIO_INTENSITY_LABELS: Readonly<Record<CardioIntensity, string>> = {
+  easy: 'Easy',
+  moderate: 'Moderate',
+  hard: 'Hard',
+}
+
+/** "Bike · 15 min · easy · 128 bpm". */
+export function formatCardio(
+  e: Pick<CardioLog, 'modality' | 'minutes' | 'intensity' | 'avgHeartRate'>,
+): string {
+  const parts = [
+    CARDIO_MODALITY_LABELS[e.modality],
+    `${e.minutes} min`,
+    CARDIO_INTENSITY_LABELS[e.intensity].toLowerCase(),
+  ]
+  if (e.avgHeartRate !== null) parts.push(`${e.avgHeartRate} bpm`)
+  return parts.join(' · ')
 }

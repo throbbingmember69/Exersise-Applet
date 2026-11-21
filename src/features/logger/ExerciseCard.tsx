@@ -174,21 +174,23 @@ export default function ExerciseCard({
         </div>
         <div className={styles.entryActions}>
           <Toggle label="Warm-up" checked={warmup} onChange={setWarmup} />
-          {!warmup && repsValue === null ? (
+          <div className={styles.entryButtons}>
+            {!warmup && repsValue === null ? (
+              <Button
+                disabled={loadValue == null || log.pending}
+                onClick={() => void onLog(targetReps)}
+              >
+                Hit target ({targetReps})
+              </Button>
+            ) : null}
             <Button
-              disabled={loadValue == null || log.pending}
-              onClick={() => void onLog(targetReps)}
+              variant="primary"
+              disabled={loadValue == null || repsValue == null || log.pending}
+              onClick={() => void onLog(repsValue)}
             >
-              Hit target ({targetReps})
+              Log {warmup ? 'warm-up' : `set ${nextIndex + 1}`}
             </Button>
-          ) : null}
-          <Button
-            variant="primary"
-            disabled={loadValue == null || repsValue == null || log.pending}
-            onClick={() => void onLog(repsValue)}
-          >
-            Log {warmup ? 'warm-up' : `set ${nextIndex + 1}`}
-          </Button>
+          </div>
         </div>
       </div>
 

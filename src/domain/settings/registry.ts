@@ -14,6 +14,7 @@ export type SettingGroup =
   | 'volume'
   | 'progression'
   | 'deload'
+  | 'cardio'
   | 'app'
 
 export interface SettingMeta {
@@ -814,6 +815,70 @@ export const SETTINGS_REGISTRY = [
     max: 14,
     step: 1,
     help: 'One program cycle by default.',
+  },
+
+  // ── Cardio ──────────────────────────────────────────────────────────────
+  // Easy cardio after lifting doesn't measurably blunt growth (Schumann 2022); longer and more
+  // frequent sessions interfere more (Wilson 2012). Hence a short start and a gradual ramp.
+  {
+    key: 'cardioStartMin',
+    label: 'Cardio: starting target',
+    group: 'cardio',
+    tag: 'Heuristic',
+    unit: 'min',
+    default: 10,
+    min: 0,
+    max: 60,
+    step: 5,
+    help: 'Minutes of cardio after each workout before the ramp adds any.',
+  },
+  {
+    key: 'cardioStepMin',
+    label: 'Cardio: weekly step',
+    group: 'cardio',
+    tag: 'Heuristic',
+    unit: 'min',
+    default: 5,
+    min: 0,
+    max: 15,
+    step: 1,
+    help: 'Added to the target after a week with enough sessions at the target.',
+  },
+  {
+    key: 'cardioMaxMin',
+    label: 'Cardio: maximum target',
+    group: 'cardio',
+    tag: 'Heuristic',
+    unit: 'min',
+    default: 30,
+    min: 5,
+    max: 90,
+    step: 5,
+    help: 'The ramp stops here.',
+  },
+  {
+    key: 'cardioAdvanceSessions',
+    label: 'Cardio: sessions to advance',
+    group: 'cardio',
+    tag: 'Heuristic',
+    unit: 'sessions',
+    default: 3,
+    min: 1,
+    max: 7,
+    step: 1,
+    help: 'Workouts in a training week whose cardio met the target, needed to raise it next week.',
+  },
+  {
+    key: 'cardioBikeLegSharePct',
+    label: 'Cardio: suggest the bike on leg days from',
+    group: 'cardio',
+    tag: 'Heuristic',
+    unit: '%',
+    default: 50,
+    min: 0,
+    max: 100,
+    step: 5,
+    help: 'A day whose planned sets are at least this share lower body suggests the bike (cycling interfered least with leg growth, Wilson 2012).',
   },
 
   // ── App ─────────────────────────────────────────────────────────────────

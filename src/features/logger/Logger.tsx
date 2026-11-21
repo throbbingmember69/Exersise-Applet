@@ -23,6 +23,7 @@ import kit from '@/ui/kit.module.css'
 import MassInput from '@/ui/MassInput'
 import Sheet from '@/ui/Sheet'
 import Spinner from '@/ui/Spinner'
+import CardioCard from './CardioCard'
 import ExerciseCard from './ExerciseCard'
 import ExercisePicker from './ExercisePicker'
 import MissingRir from './MissingRir'
@@ -174,6 +175,7 @@ export default function Logger() {
         <Button block icon="plus" onClick={() => setAdding(true)}>
           Add exercise
         </Button>
+        <CardioCard sessionId={id} editable />
         <Button variant="primary" block icon="check" onClick={() => setFinishing(true)}>
           Finish workout
         </Button>

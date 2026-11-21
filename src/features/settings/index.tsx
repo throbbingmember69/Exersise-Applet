@@ -31,6 +31,7 @@ const GROUPS: Record<SettingGroup, string> = {
   volume: 'Volume',
   progression: 'Progression',
   deload: 'Deload',
+  cardio: 'Cardio',
   app: 'App',
 }
 

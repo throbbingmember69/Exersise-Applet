@@ -41,6 +41,8 @@ Use CSS Modules with the tokens in `src/styles/tokens.css`. Don't hard-code colo
 ## Numbers and copy
 - **Mass:** 1 decimal, trailing zeros trimmed ("220 lb", "37.5 lb", "99.8 kg"). Dumbbell loads say "per hand". Chin-ups show added load: "+50 lb".
 - **Regime line:** "4 × 6–10 · RIR 1–2 · rest 2–3 min".
+- **Cardio:** "Bike · 15 min · easy · 128 bpm" (`formatCardio`); targets in whole minutes ("Target this week: 15 min").
+- **Growth cue:** one line under the regime, "For growth: …", the cue only (the reason lives in the Form sheet).
 - **Everything else:**
   - kcal with thousands separators ("3,000 kcal")
   - protein/fat/carbs in whole grams

@@ -1,13 +1,13 @@
-// The spec's three CSV exports (sets, body entries, nutrition entries), read from the database and
+// The CSV exports (the spec's sets, body entries and nutrition entries, plus cardio), read from the database and
 // formatted by domain/csv.ts: lb units, ISO dates, voided rows left out. Files start with a UTF-8
 // byte-order mark so spreadsheet apps pick the right encoding.
-import { bodyCsv, csvFileName, nutritionCsv, setsCsv, type CsvKind } from '@/domain/csv'
+import { bodyCsv, cardioCsv, csvFileName, nutritionCsv, setsCsv, type CsvKind } from '@/domain/csv'
 import type { LocalDate } from '@/domain/types'
 import { today, type ServiceCtx } from '../context'
 
 export type { CsvKind }
 
-export const CSV_KINDS: readonly CsvKind[] = ['sets', 'body', 'nutrition']
+export const CSV_KINDS: readonly CsvKind[] = ['sets', 'cardio', 'body', 'nutrition']
 
 export interface CsvExport {
   fileName: string
@@ -45,6 +45,18 @@ async function csvText(ctx: Pick<ServiceCtx, 'db'>, kind: CsvKind): Promise<stri
         }),
       )
       return setsCsv(input, options)
+    }
+    case 'cardio': {
+      const input = await db.transaction(
+        'r',
+        [db.sessions, db.cardioLogs, db.programDays],
+        async () => ({
+          sessions: await db.sessions.toArray(),
+          cardioLogs: await db.cardioLogs.toArray(),
+          programDays: await db.programDays.toArray(),
+        }),
+      )
+      return cardioCsv(input, options)
     }
     case 'body':
       return bodyCsv(await db.bodyEntries.toArray(), options)

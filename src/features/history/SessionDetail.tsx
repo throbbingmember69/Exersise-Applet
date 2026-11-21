@@ -19,6 +19,7 @@ import kit from '@/ui/kit.module.css'
 import MassInput from '@/ui/MassInput'
 import Spinner from '@/ui/Spinner'
 import SetEditor from '@/features/logger/SetEditor'
+import CardioCard from '@/features/logger/CardioCard'
 import styles from '@/features/logger/logger.module.css'
 
 /** A past session: read-only, with an explicit Edit mode for fixing mistakes (DECISIONS #8). */
@@ -164,6 +165,8 @@ export default function SessionDetail() {
             ) : null}
           </Card>
         ))}
+
+        {detail.voided ? null : <CardioCard sessionId={id} editable={editing} />}
 
         {editing ? (
           <Card title="Session">

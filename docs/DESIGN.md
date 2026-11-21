@@ -309,8 +309,21 @@ Core types: `LocalDate` (branded string), `Branch = 'start'|'calibration'|'calib
 - `restView(t, now): {stage:'rest'|'min'|'max', msToMin, msToMax, elapsedMs}` and `alertTimes(t): number[]` (at the minimum, then at the maximum if it's larger, plus any +30 s extensions).
 - `toCsv(header, rows, {bom}): string`: RFC 4180 with CRLF. Text cells starting with `= + - @` get a formula-injection guard; numbers don't.
 - `setsCsv(...)` columns: date, session_id, session_status, program_day, gym, exercise, exercise_id, load_type, per_hand, set_index, is_warmup, load_lb, reps, rir, set_note, session_bodyweight_lb, is_deload.
-- `bodyCsv(...)` and `nutritionCsv(...)`.
+- `bodyCsv(...)`, `nutritionCsv(...)` and `cardioCsv(...)` (date, session_id, session_status, program_day, modality, minutes, intensity, avg_heart_rate, note).
 - Exports use lb and ISO dates, and exclude voided rows.
+
+**cardio.ts (schema v4, 2026-11-21)**
+- `cardioTarget({sessions, logs}, date, s): {minutes, weekStart, sessionsAtTarget, sessionsNeeded, nextMinutes, atMax}`. Replayed from history, never stored:
+  - the target starts at `cardioStartMin` (10);
+  - after each training week (`trainingWeekStartDay`) with at least `cardioAdvanceSessions` (3) counted workouts whose cardio totalled the week's target, it rises by `cardioStepMin` (5), up to `cardioMaxMin` (30);
+  - otherwise it holds; it never drops. Abandoned, voided and voided-session cardio doesn't count.
+- `isLegDay(dayVolume, s)`: the day's planned sets are at least `cardioBikeLegSharePct` (50) % quads, hamstrings, glutes and calves.
+- `suggestedCardioModality(dayVolume, lastModality, s)`: the bike on a leg day (cycling interfered least with leg growth, Wilson 2012), else the last machine used, else an incline walk.
+- Services (`services/training/cardio.ts`):
+  - logger: `logCardio`, `updateCardio`, `voidCardio` (in-progress sessions only);
+  - Edit mode: `addCardioInEdit`, `editCardio`, `voidCardioInEdit`, `restoreCardio` (finished or abandoned sessions; they stamp `editedAt`);
+  - `getCardioBlock(sessionId)` returns the target, suggestion, leg-day flag, entries, voided entries, total and target met.
+- Cardio doesn't feed the nutrition engine: measured maintenance absorbs its energy cost.
 
 **Service-layer signatures (not pure):**
 - `startSession({gymId, programDayId|null, isDeload, bodyweightLb?}): Promise<id>` computes every snapshot first, then writes the session and its session-exercise rows in one Dexie transaction.
@@ -347,6 +360,12 @@ The bottom navigation has five tabs: **Today · Train · Body · Food · More**.
    - last-session line and branch reason
    - set rows: load stepper (± the resolved step, unit-aware), reps (the target as placeholder; − / + start from it; **Hit target (N)** logs it), RIR chips 0–5 (blank), warm-up toggle, Save
    - finish sheet: working sets without RIR, each with RIR chips (optional, never blocks)
+   - after the exercises, a **Cardio** card:
+     - this week's target, plus "Bike suggested" on a leg day;
+     - the ramp progress ("1 of 3 workouts at 15 min this week → 20 min next week");
+     - machine and intensity chips (easy by default) and a minutes stepper (target as placeholder, **Hit target (N min)**), with an optional heart rate;
+     - the entries logged this session. Summary shows it read-only; a past session's Edit mode can add, remove and restore entries
+   - under each exercise's regime line, its first **growth cue**; the Form sheet lists all of them, with reasons, above the form cues
    - Save writes the `setLog` immediately, so nothing is lost if the app crashes
 5. Saving starts the timer: a sticky bar counts down to the minimum rest, then the maximum, with +30 s and Skip.
 6. The exercise menu has: swap (alternates first, then the library; only while no sets are logged), note, "set starting load" (calibration), skip.

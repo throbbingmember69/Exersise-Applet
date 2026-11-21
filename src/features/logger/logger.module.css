@@ -211,3 +211,24 @@
   display: grid;
   gap: var(--space-1);
 }
+
+.cardioEntries {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.cardioEntries li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.entryButtons {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}

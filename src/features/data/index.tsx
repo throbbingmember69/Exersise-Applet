@@ -28,6 +28,7 @@ import styles from './data.module.css'
 
 const CSVS: { kind: CsvKind; label: string }[] = [
   { kind: 'sets', label: 'Workout sets' },
+  { kind: 'cardio', label: 'Cardio' },
   { kind: 'body', label: 'Body log' },
   { kind: 'nutrition', label: 'Nutrition' },
 ]

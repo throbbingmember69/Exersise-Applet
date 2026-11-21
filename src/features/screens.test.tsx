@@ -119,6 +119,74 @@ describe('Logger screen', () => {
   })
 })
 
+describe('Cardio', () => {
+  it('shows this week’s target after the exercises, suggests the bike on a leg day and logs it', async () => {
+    const c = ctx()
+    const id = await startSession(c, { gymId: 'gym-1', programDayId: 'day-lower-a' })
+    renderScreen(<Logger />, { ctx: c, route: '/train/session/:id', path: `/train/session/${id}` })
+    const card = (await screen.findByRole('heading', { name: 'Cardio' })).closest('section')!
+    expect(within(card).getByText(/Bike suggested/)).toBeInTheDocument()
+    expect(
+      within(card).getByText('0 of 3 workouts at 10 min this week → 15 min next week.'),
+    ).toBeInTheDocument()
+    const machines = within(card).getByRole('group', { name: 'Cardio machine' })
+    expect(within(machines).getByRole('button', { name: 'Bike' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(card).getByLabelText('Cardio minutes')).toHaveAttribute('placeholder', '10')
+    await userEvent.click(within(card).getByRole('button', { name: 'Hit target (10 min)' }))
+    expect(await within(card).findByText('Bike · 10 min · easy')).toBeInTheDocument()
+    expect(within(card).getByText('Target met')).toBeInTheDocument()
+    expect(await c.db.cardioLogs.count()).toBe(1)
+  })
+
+  it('logs typed minutes on another machine, and can be removed', async () => {
+    const c = ctx()
+    const id = await startSession(c, { gymId: 'gym-1', programDayId: 'day-push' })
+    renderScreen(<Logger />, { ctx: c, route: '/train/session/:id', path: `/train/session/${id}` })
+    const card = (await screen.findByRole('heading', { name: 'Cardio' })).closest('section')!
+    expect(within(card).queryByText(/Bike suggested/)).toBeNull()
+    await userEvent.click(within(card).getByRole('button', { name: 'Elliptical' }))
+    await userEvent.click(within(card).getByRole('button', { name: 'Moderate' }))
+    await userEvent.click(within(card).getByRole('button', { name: 'Increase Cardio minutes' }))
+    await userEvent.click(within(card).getByRole('button', { name: 'Log cardio' }))
+    const entry = await within(card).findByText('Elliptical · 11 min · moderate')
+    expect(entry).toBeInTheDocument()
+    await userEvent.click(
+      within(card).getByRole('button', { name: 'Remove Elliptical · 11 min · moderate' }),
+    )
+    await waitFor(() =>
+      expect(within(card).queryByText('Elliptical · 11 min · moderate')).toBeNull(),
+    )
+  })
+
+  it('is added in a past session’s Edit mode', async () => {
+    const c = ctx()
+    const id = await startSession(c, { gymId: 'gym-1', programDayId: 'day-push' })
+    await finishSession(c, id, {})
+    renderScreen(<SessionDetail />, {
+      ctx: c,
+      route: '/train/history/:id',
+      path: `/train/history/${id}`,
+    })
+    await screen.findByRole('button', { name: 'Edit' })
+    // Read-only and empty: no cardio card.
+    expect(screen.queryByRole('heading', { name: 'Cardio' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    await userEvent.click(
+      within(await screen.findByRole('dialog', { name: 'Edit this session?' })).getByRole(
+        'button',
+        { name: 'Edit' },
+      ),
+    )
+    const card = (await screen.findByRole('heading', { name: 'Cardio' })).closest('section')!
+    await userEvent.click(within(card).getByRole('button', { name: 'Hit target (10 min)' }))
+    expect(await within(card).findByText('Incline walk · 10 min · easy')).toBeInTheDocument()
+    expect((await c.db.cardioLogs.toArray())[0]?.editedAt).not.toBeNull()
+  })
+})
+
 describe('Session detail', () => {
   it('is read-only until Edit is confirmed', async () => {
     const c = ctx()

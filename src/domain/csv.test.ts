@@ -8,11 +8,14 @@ import {
   csvFileName,
   nutritionCsv,
   setsCsv,
+  cardioCsv,
+  CARDIO_CSV_HEADER,
   toCsv,
   type SetsCsvInput,
 } from './csv'
 import type {
   BodyEntry,
+  CardioLog,
   Gym,
   LocalDate,
   NutritionEntry,
@@ -931,5 +934,50 @@ describe('csvFileName', () => {
     expect(csvFileName('sets', d('2026-09-24'))).toBe('exersise-sets-2026-09-24.csv')
     expect(csvFileName('body', d('2026-09-24'))).toBe('exersise-body-2026-09-24.csv')
     expect(csvFileName('nutrition', d('2026-10-01'))).toBe('exersise-nutrition-2026-10-01.csv')
+  })
+})
+
+describe('cardioCsv', () => {
+  const log = (
+    p: Partial<CardioLog> & Pick<CardioLog, 'id' | 'sessionId' | 'date'>,
+  ): CardioLog => ({
+    modality: 'bike',
+    minutes: 15,
+    intensity: 'easy',
+    avgHeartRate: null,
+    note: '',
+    loggedAt: 0,
+    editedAt: null,
+    voidedAt: null,
+    ...p,
+  })
+  const text = cardioCsv({
+    sessions,
+    programDays,
+    cardioLogs: [
+      log({ id: 'c2', sessionId: 's-tue', date: d('2026-09-29'), minutes: 20, avgHeartRate: 131 }),
+      log({
+        id: 'c1',
+        sessionId: 's-mon',
+        date: d('2026-09-28'),
+        modality: 'incline_walk',
+        note: 'a, "b"',
+      }),
+      log({ id: 'c3', sessionId: 's-mon', date: d('2026-09-28'), voidedAt: 5 }),
+      log({ id: 'c4', sessionId: 's-dup', date: d('2026-09-30') }),
+    ],
+  })
+  const rows = records(text)
+
+  it('writes one row per live entry, by date, with the session and program day', () => {
+    expect(parseCsv(text)[0]).toEqual([...CARDIO_CSV_HEADER])
+    expect(
+      rows.map((r) => [r.date, r.program_day, r.modality, r.minutes, r.avg_heart_rate]),
+    ).toEqual([
+      ['2026-09-28', 'Lower A', 'incline_walk', '15', ''],
+      ['2026-09-29', 'Push', 'bike', '20', '131'],
+    ])
+    expect(rows[0]!.note).toBe('a, "b"')
+    expect(rows[0]!.session_status).toBe('finished')
   })
 })

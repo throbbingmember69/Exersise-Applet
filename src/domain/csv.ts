@@ -9,6 +9,7 @@ import { roundHalfAway } from './rounding'
 import { effectiveSessionBodyweight, weighInsByDate } from './trend'
 import type {
   BodyEntry,
+  CardioLog,
   EpochMs,
   Gym,
   LocalDate,
@@ -20,7 +21,7 @@ import type {
 } from './types'
 
 export type CsvCell = string | number | boolean | null
-export type CsvKind = 'sets' | 'body' | 'nutrition'
+export type CsvKind = 'sets' | 'cardio' | 'body' | 'nutrition'
 
 export interface CsvOptions {
   /** Prefix a UTF-8 byte-order mark (helps Excel detect the encoding). Default false. */
@@ -45,6 +46,18 @@ export const SETS_CSV_HEADER = [
   'set_note',
   'session_bodyweight_lb',
   'is_deload',
+] as const
+
+export const CARDIO_CSV_HEADER = [
+  'date',
+  'session_id',
+  'session_status',
+  'program_day',
+  'modality',
+  'minutes',
+  'intensity',
+  'avg_heart_rate',
+  'note',
 ] as const
 
 export const BODY_CSV_HEADER = [
@@ -146,6 +159,35 @@ export function setsCsv(input: SetsCsvInput, options?: CsvOptions): string {
     ])
 
   return toCsv(SETS_CSV_HEADER, rows, options)
+}
+
+export interface CardioCsvInput {
+  sessions: readonly Session[]
+  cardioLogs: readonly CardioLog[]
+  programDays: readonly ProgramDay[]
+}
+
+/** One row per cardio entry, by date and time; voided entries and voided sessions excluded. */
+export function cardioCsv(input: CardioCsvInput, options?: CsvOptions): string {
+  const sessions = indexById(input.sessions)
+  const dayNames = new Map(input.programDays.map((d) => [d.id, d.name]))
+  const rows = input.cardioLogs
+    .filter(isLive)
+    .map((log) => ({ log, session: sessions.get(log.sessionId) }))
+    .filter(({ session }) => session === undefined || isLive(session))
+    .sort((a, b) => compareLocalDate(a.log.date, b.log.date) || a.log.loggedAt - b.log.loggedAt)
+    .map(({ log, session }): CsvCell[] => [
+      log.date,
+      log.sessionId,
+      session?.status ?? null,
+      session?.programDayId ? (dayNames.get(session.programDayId) ?? session.programDayId) : null,
+      log.modality,
+      log.minutes,
+      log.intensity,
+      log.avgHeartRate,
+      log.note,
+    ])
+  return toCsv(CARDIO_CSV_HEADER, rows, options)
 }
 
 /** Body entries by date, voided entries excluded. */
