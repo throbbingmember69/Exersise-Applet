@@ -83,6 +83,7 @@ export default function ScaleImportCard() {
   }
 
   const writable = preview ? preview.counts.new + preview.counts.update : 0
+  const unsettled = preview ? preview.days.filter((d) => d.unsettled) : []
 
   return (
     <Card title="Import from your smart scale">
@@ -152,6 +153,29 @@ export default function ScaleImportCard() {
                 </span>
               ))}
           </p>
+          {unsettled.length > 0 ? (
+            <details>
+              <summary>
+                {unsettled.length} day{unsettled.length > 1 ? 's' : ''} with readings more than{' '}
+                {formatMassWithUnit(preview.spreadWarnLb, units)} apart
+              </summary>
+              <p className={styles.hint}>
+                Readings minutes apart count as one weigh-in; the last full reading is kept. Check
+                these days in the body log.
+              </p>
+              <ul>
+                {unsettled.map((d) => (
+                  <li key={d.reading.date}>
+                    {formatDate(d.reading.date)}: {d.reading.readingCount} readings{' '}
+                    {formatMassWithUnit(d.reading.spreadLb ?? 0, units)} apart, kept{' '}
+                    {d.values.weightLb !== null
+                      ? formatMassWithUnit(d.values.weightLb, units)
+                      : '—'}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
           <Toggle
             label="Keep days I entered by hand"
             hint="Otherwise the scale’s reading replaces a day you already logged"

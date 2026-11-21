@@ -11,7 +11,7 @@ const ARBOLEAF_LIKE = [
 ].join('\r\n')
 
 describe('parseScaleCsv', () => {
-  it('reads an Arboleaf-style export: columns by header, lb, earliest reading per day', () => {
+  it('reads an Arboleaf-style export: columns by header, lb, the morning weigh-in per day', () => {
     const r = parseScaleCsv(ARBOLEAF_LIKE)
     expect(r.massUnit).toBe('lb')
     expect(r.dateOrder).toBe('YMD')
@@ -21,6 +21,9 @@ describe('parseScaleCsv', () => {
         date: '2026-09-24',
         minuteOfDay: 7 * 60 + 12,
         rawDate: '2026-09-24 07:12:30',
+        // The 18:05 reading is a separate, later weigh-in: ignored.
+        readingCount: 1,
+        spreadLb: 0,
         weightLb: 163,
         bodyFatPct: 14.3,
         muscleMassLb: 132,
@@ -109,7 +112,7 @@ const ARBOLEAF_REAL = [
 ].join('\n')
 
 describe('parseScaleCsv on the real Arboleaf layout', () => {
-  it('finds the columns, reads M/D/Y with seconds, and fills each value from the earliest reading that has it', () => {
+  it('finds the columns, reads M/D/Y with seconds, and keeps each weigh-in’s last full reading whole', () => {
     const r = parseScaleCsv(ARBOLEAF_REAL)
     expect(r.dateOrder).toBe('MDY')
     expect(r.massUnit).toBe('lb')
@@ -125,10 +128,12 @@ describe('parseScaleCsv on the real Arboleaf layout', () => {
     })
     expect(r.readings).toEqual([
       {
-        // 05:49:27 is weight only; the full reading 9 s later supplies the rest.
+        // 05:49:27 is weight only; the full reading 9 s later is the one kept.
         date: '2026-09-22',
         minuteOfDay: 5 * 60 + 49,
-        rawDate: '09/22/2026 05:49:27',
+        rawDate: '09/22/2026 05:49:36',
+        readingCount: 2,
+        spreadLb: 0,
         weightLb: 163.5,
         bodyFatPct: 14.3,
         muscleMassLb: 132.9,
@@ -137,18 +142,62 @@ describe('parseScaleCsv on the real Arboleaf layout', () => {
         visceralRating: 5,
       },
       {
-        // Earliest by seconds (08:30:24), not the first row in the file.
+        // Three readings in 37 s (out of file order): the last full one, by time, wins.
         date: '2026-09-26',
-        minuteOfDay: 8 * 60 + 30,
-        rawDate: '09/26/2026 08:30:24',
-        weightLb: 163.9,
-        bodyFatPct: 14.5,
-        muscleMassLb: 133,
-        skeletalMusclePct: 55.1,
-        subcutFatPct: 12.9,
+        minuteOfDay: 8 * 60 + 31,
+        rawDate: '09/26/2026 08:31:01',
+        readingCount: 3,
+        spreadLb: expect.closeTo(0.2, 9),
+        weightLb: 163.7,
+        bodyFatPct: 14.4,
+        muscleMassLb: 133.1,
+        skeletalMusclePct: 55.2,
+        subcutFatPct: 12.8,
         visceralRating: 5,
       },
     ])
+  })
+
+  // The user's real 2026-08-15 morning: four readings in five minutes while the weight settled.
+  const UNSETTLED = [
+    ARBOLEAF_REAL.split('\n')[0],
+    '08/15/2026 07:59:12,162.9,14.2,22.7,55.4,132.4,19.4,1740,139.8,12.5,5,58.1,7.0,Normal,18,20.3,90.0,81.6,23.1,0,165,7.0,0.8,Scale',
+    '08/15/2026 07:56:40,163.4,14.3,22.8,55.4,132.7,19.4,1742,140.0,12.6,5,58.0,7.0,Normal,18,20.5,90.1,81.5,23.4,0,165,7.0,0.8,Scale',
+    '08/15/2026 07:55:31,165.3,14.7,23.1,55.1,134.1,19.3,1751,141.0,12.9,6,57.7,7.1,Normal,19,21.3,90.6,81.1,24.3,0,165,7.1,0.9,Scale',
+    '08/15/2026 07:54:58,166.1,- -,23.2,- -,- -,- -,- -,- -,- -,- -,- -,- -,,- -,,,,,,,,,Scale',
+  ].join('\n')
+
+  it('keeps one reading whole instead of mixing values across readings, and reports the spread', () => {
+    const [day] = parseScaleCsv(UNSETTLED).readings
+    expect(day).toMatchObject({
+      date: '2026-08-15',
+      rawDate: '08/15/2026 07:59:12',
+      readingCount: 4,
+      weightLb: 162.9,
+      bodyFatPct: 14.2,
+      muscleMassLb: 132.4,
+      visceralRating: 5,
+    })
+    expect(day!.spreadLb).toBeCloseTo(3.2, 9)
+  })
+
+  it('splits weigh-ins by clusterMin and keeps only the first one', () => {
+    // With a 1-minute window only the 07:54:58 and 07:55:31 readings are the morning weigh-in.
+    const [day] = parseScaleCsv(UNSETTLED, { clusterMin: 1 }).readings
+    expect(day).toMatchObject({ rawDate: '08/15/2026 07:55:31', readingCount: 2, weightLb: 165.3 })
+    expect(day!.spreadLb).toBeCloseTo(0.8, 9)
+  })
+
+  it('keeps the last weight-only reading when the weigh-in has no full reading', () => {
+    const text = [
+      ARBOLEAF_REAL.split('\n')[0],
+      '08/24/2026 08:28:10,163.3,- -,22.8,- -,- -,- -,- -,- -,- -,- -,- -,- -,,- -,,,,,,,,,Scale',
+      '08/24/2026 04:21:52,164.7,- -,23.0,- -,- -,- -,- -,- -,- -,- -,- -,- -,,- -,,,,,,,,,Scale',
+      '08/24/2026 04:22:30,164.5,- -,23.0,- -,- -,- -,- -,- -,- -,- -,- -,- -,,- -,,,,,,,,,Scale',
+    ].join('\n')
+    const [day] = parseScaleCsv(text).readings
+    expect(day).toMatchObject({ readingCount: 2, weightLb: 164.5, bodyFatPct: null })
+    expect(day!.spreadLb).toBeCloseTo(0.2, 9)
   })
 })
 

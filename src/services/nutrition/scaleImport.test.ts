@@ -32,7 +32,7 @@ const FILE = [
 ].join('\n')
 
 describe('previewScaleImport', () => {
-  it('plans each day: seed day filled, earliest reading, implausible values dropped, future skipped', async () => {
+  it('plans each day: seed day filled, morning weigh-in, implausible values dropped, future skipped', async () => {
     const c = ctx()
     const p = await previewScaleImport(c, { text: FILE })
     expect(p.massUnit).toBe('lb')
@@ -54,6 +54,34 @@ describe('previewScaleImport', () => {
     expect(p.warnings).toEqual(['Row 6: no readable values, skipped.'])
     expect(p.counts).toMatchObject({ new: 2, update: 1, future: 1 })
     expect(await c.db.bodyEntries.count()).toBe(1) // preview writes nothing
+  })
+
+  it('flags a weigh-in whose readings differ by more than scaleSpreadWarnLb, and imports the settled one', async () => {
+    const c = ctx()
+    const text = [
+      'Time,Weight(lb),Body Fat(%)',
+      '2026-09-28 07:54:58,166.1,',
+      '2026-09-28 07:55:31,165.3,14.7',
+      '2026-09-28 07:59:12,162.9,14.2',
+      '2026-09-29 07:00:00,163.0,14.3',
+      '2026-09-29 07:01:00,163.4,14.4',
+    ].join('\n')
+    const p = await previewScaleImport(c, { text })
+    expect(p.spreadWarnLb).toBe(2)
+    expect(
+      p.days.map((d) => [d.reading.date, d.values.weightLb, d.values.bodyFatPct, d.unsettled]),
+    ).toEqual([
+      ['2026-09-28', 162.9, 14.2, true],
+      ['2026-09-29', 163.4, 14.4, false],
+    ])
+    // The threshold is a setting.
+    await c.db.settings.update('singleton', { values: { scaleSpreadWarnLb: 4 } })
+    expect((await previewScaleImport(c, { text })).days[0]!.unsettled).toBe(false)
+    await importScaleReadings(c, { text })
+    expect(await c.db.bodyEntries.get('2026-09-28')).toMatchObject({
+      weightLb: 162.9,
+      bodyFatPct: 14.2,
+    })
   })
 
   it('marks days already logged: same values vs different (replaced unless keeping)', async () => {

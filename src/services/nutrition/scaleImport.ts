@@ -1,5 +1,5 @@
 // Import a smart-scale CSV export (e.g. the Arboleaf app's) into the body log: one reading per day
-// (the earliest), weights and scale fields. Imported data wins by default: a day in the file
+// (the first weigh-in's settled, full reading; see domain/scaleCsv), weights and scale fields. Imported data wins by default: a day in the file
 // replaces what was typed for it (the user's decision). The preview shows exactly what will
 // happen per day before anything is written; the import is one transaction.
 import { compareLocalDate } from '@/domain/dates'
@@ -10,9 +10,11 @@ import {
   type ScaleField,
   type ScaleReading,
 } from '@/domain/scaleCsv'
+import type { Settings } from '@/domain/settings/registry'
 import type { BodyEntry, LocalDate } from '@/domain/types'
 import { today, type ServiceCtx } from '../context'
 import { ServiceError } from '../errors'
+import { loadSettings } from '../settings'
 import { BODY_RANGES } from './body'
 
 type Values = Pick<
@@ -50,6 +52,8 @@ export interface ImportDay {
   /** Values dropped as implausible, e.g. "Body fat % 140 is outside 2–70". */
   problems: string[]
   existing: Values | null
+  /** The weigh-in's readings differ by more than scaleSpreadWarnLb (an unsettled reading). */
+  unsettled: boolean
 }
 
 export interface ScaleImportPreview {
@@ -64,6 +68,8 @@ export interface ScaleImportPreview {
   warnings: string[]
   days: ImportDay[]
   counts: Record<ImportDayStatus, number>
+  /** The settings' scaleSpreadWarnLb, for the unsettled-day note. */
+  spreadWarnLb: number
 }
 
 export interface ScaleImportInput {
@@ -116,11 +122,15 @@ function plan(
   entries: readonly BodyEntry[],
   todayDate: LocalDate,
   opts: ScaleImportInput,
+  settings: Settings,
 ): ScaleImportPreview {
   if (typeof text !== 'string' || text.trim() === '') {
     throw new ServiceError('empty_file', 'The file is empty.')
   }
-  const parsed = parseScaleCsv(text, opts.massUnit ? { massUnit: opts.massUnit } : {})
+  const parsed = parseScaleCsv(text, {
+    clusterMin: settings.scaleClusterMin,
+    ...(opts.massUnit ? { massUnit: opts.massUnit } : {}),
+  })
   const byDate = new Map(entries.map((e) => [e.date, e]))
   const counts: Record<ImportDayStatus, number> = {
     new: 0,
@@ -147,6 +157,7 @@ function plan(
       status,
       problems,
       existing: existing ? (Object.fromEntries(KEYS.map((k) => [k, existing[k]])) as Values) : null,
+      unsettled: reading.spreadLb !== null && reading.spreadLb > settings.scaleSpreadWarnLb,
     }
   })
   const recognized: ScaleImportPreview['recognized'] = {}
@@ -166,6 +177,7 @@ function plan(
     warnings: parsed.warnings,
     days,
     counts,
+    spreadWarnLb: settings.scaleSpreadWarnLb,
   }
 }
 
@@ -174,8 +186,9 @@ export async function previewScaleImport(
   ctx: Pick<ServiceCtx, 'db' | 'now'>,
   input: ScaleImportInput,
 ): Promise<ScaleImportPreview> {
+  const settings = await loadSettings(ctx)
   const entries = await ctx.db.bodyEntries.toArray()
-  return plan(input.text, entries, today(ctx), input)
+  return plan(input.text, entries, today(ctx), input, settings)
 }
 
 export interface ScaleImportResult {
@@ -195,9 +208,10 @@ export async function importScaleReadings(
 ): Promise<ScaleImportResult> {
   const { db } = ctx
   const now = ctx.now()
+  const settings = await loadSettings(ctx)
   return db.transaction('rw', db.bodyEntries, async () => {
     const entries = await db.bodyEntries.toArray()
-    const preview = plan(input.text, entries, today(ctx), input)
+    const preview = plan(input.text, entries, today(ctx), input, settings)
     if (preview.needsUnit) {
       throw new ServiceError('unit_needed', 'Choose whether the file’s weights are in lb or kg.')
     }

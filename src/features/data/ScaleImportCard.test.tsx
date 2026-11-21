@@ -19,7 +19,7 @@ const CSV =
   '2026-09-26 07:00,163.0,14.1,132.0\n'
 
 describe('ScaleImportCard', () => {
-  it('previews a scale export and imports the earliest reading per day', async () => {
+  it('previews a scale export and imports the morning reading per day', async () => {
     const ctx = createTestCtx({ startMs: Date.UTC(2026, 9, 1, 18) })
     ctxs.push(ctx)
     renderScreen(<ScaleImportCard />, { ctx })
@@ -65,7 +65,7 @@ describe('ScaleImportCard', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Import 2 days' }))
 
     await waitFor(async () => {
-      // The weight-only reading (08:30:40) is the earliest; body fat comes from 08:31:01.
+      // 08:30:40 (weight only) and 08:31:01 are one weigh-in: the full 08:31:01 reading is kept.
       expect(await ctx.db.bodyEntries.get('2026-09-26' as never)).toMatchObject({
         weightLb: 163.7,
         bodyFatPct: 14.4,
@@ -73,5 +73,20 @@ describe('ScaleImportCard', () => {
       })
     })
     expect((await ctx.db.bodyEntries.get('2026-09-22' as never))?.weightLb).toBe(163.5)
+  })
+
+  it('lists weigh-ins whose readings were unsettled', async () => {
+    const ctx = createTestCtx({ startMs: Date.UTC(2026, 9, 1, 18) })
+    ctxs.push(ctx)
+    renderScreen(<ScaleImportCard />, { ctx })
+    const csv =
+      'Time,Weight(lb),Body Fat(%)\n' +
+      '2026-09-28 07:54:58,166.1,\n' +
+      '2026-09-28 07:55:31,165.3,14.7\n' +
+      '2026-09-28 07:59:12,162.9,14.2\n'
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement
+    await userEvent.upload(input, new File([csv], 'arboleaf.csv', { type: 'text/csv' }))
+    expect(await screen.findByText(/1 day with readings more than 2 lb apart/)).toBeInTheDocument()
+    expect(screen.getByText(/3 readings 3\.2 lb apart, kept 162\.9 lb/)).toBeInTheDocument()
   })
 })

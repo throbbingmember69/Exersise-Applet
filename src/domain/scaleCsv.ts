@@ -1,7 +1,12 @@
 // Smart-scale CSV exports (Arboleaf and similar): find the columns by their headers, parse the
-// readings and keep one per day, the earliest (the spec's "weigh in every morning" rule). Each
-// value comes from the day's earliest reading that has it: the scale often logs a weight-only
-// reading seconds before the full body-composition one, and that pair is one weigh-in.
+// readings and keep one per day (the spec's "weigh in every morning" rule). A day's first weigh-in
+// is its earliest reading plus every reading within `clusterMin` minutes of it: the scale often
+// logs a weight-only or still-settling reading first and the full body-composition one seconds
+// later (one export has 166.1, 165.3, 163.4 and 162.9 lb inside five minutes). The import keeps
+// that weigh-in's LAST reading with body-composition values (else its last reading), whole: every
+// value comes from that one reading, never mixed across readings. `spreadLb` reports how far the
+// weigh-in's weights differ, so the preview can flag an unsettled one. Later weigh-ins that day
+// (an evening reading) are ignored.
 //
 // The export format isn't documented, so everything is detected rather than hard-coded:
 // - delimiter (comma, semicolon or tab), quoted fields, a UTF-8 BOM;
@@ -12,6 +17,7 @@
 // Values like "--" or empty cells are missing, not zero. Nothing here validates plausibility;
 // the importer does that.
 import { parseNumberCell, readTable, resolveDates, type DateOrder } from './csvRead'
+import { DEFAULT_SETTINGS } from './settings/registry'
 import type { LocalDate } from './types'
 import { kgToLb } from './units'
 
@@ -32,10 +38,14 @@ export interface ScaleColumns {
 
 export interface ScaleReading {
   date: LocalDate
-  /** Minutes after midnight of the day's earliest reading (0 when the export has no time). */
+  /** Minutes after midnight of the kept reading (0 when the export has no time). */
   minuteOfDay: number
-  /** Raw date text of the day's earliest reading, for the preview. */
+  /** Raw date text of the kept reading, for the preview. */
   rawDate: string
+  /** Readings in the day's first weigh-in (1 = a single reading). */
+  readingCount: number
+  /** Heaviest minus lightest weight across the weigh-in's readings (0 for one; null without weights). */
+  spreadLb: number | null
   weightLb: number | null
   bodyFatPct: number | null
   muscleMassLb: number | null
@@ -50,7 +60,7 @@ export interface ScaleCsvResult {
   dateOrder: DateOrder | null
   /** Mass unit used for weight and muscle mass (null = couldn't tell; pass one in). */
   massUnit: MassUnit | null
-  /** One reading per date (each value from the earliest reading that has it), oldest first. */
+  /** One reading per date (the first weigh-in's last full reading, whole), oldest first. */
   readings: ScaleReading[]
   /** Rows read (before keeping one per day). */
   rowCount: number
@@ -129,8 +139,15 @@ const VALUE_KEYS = [
   'visceralRating',
 ] as const satisfies readonly (keyof ScaleReading)[]
 
-/** Parse a scale export. `massUnit` overrides the detected unit (the preview's unit picker). */
-export function parseScaleCsv(text: string, opts: { massUnit?: MassUnit } = {}): ScaleCsvResult {
+/**
+ * Parse a scale export. `massUnit` overrides the detected unit (the preview's unit picker);
+ * `clusterMin` is the settings' scaleClusterMin (how close readings must be to count as one weigh-in).
+ */
+export function parseScaleCsv(
+  text: string,
+  opts: { massUnit?: MassUnit; clusterMin?: number } = {},
+): ScaleCsvResult {
+  const clusterSec = (opts.clusterMin ?? DEFAULT_SETTINGS.scaleClusterMin) * 60
   const { headers, rows, decimalComma } = readTable(text)
   const columns = detectColumns(headers)
   const warnings: string[] = []
@@ -190,6 +207,8 @@ export function parseScaleCsv(text: string, opts: { massUnit?: MassUnit } = {}):
       date: d.date,
       minuteOfDay: Math.floor(d.second / 60),
       rawDate: raw,
+      readingCount: 1,
+      spreadLb: null,
       weightLb: toLb(cell('weight')),
       bodyFatPct: cell('bodyFatPct'),
       muscleMassLb: toLb(cell('muscleMass')),
@@ -216,12 +235,17 @@ export function parseScaleCsv(text: string, opts: { massUnit?: MassUnit } = {}):
 
   const readings = [...byDate.values()].map((day) => {
     // Stable sort: readings with the same time keep file order.
-    const sorted = [...day].sort((a, b) => a.second - b.second).map((x) => x.reading)
-    const merged = { ...sorted[0]! }
-    for (const k of VALUE_KEYS) {
-      if (merged[k] === null) merged[k] = sorted.find((x) => x[k] !== null)?.[k] ?? null
+    const sorted = [...day].sort((a, b) => a.second - b.second)
+    const first = sorted[0]!.second
+    const weighIn = sorted.filter((x) => x.second - first <= clusterSec).map((x) => x.reading)
+    const kept =
+      lastWhere(weighIn, hasComposition) ?? lastWhere(weighIn, hasWeight) ?? weighIn.at(-1)!
+    const weights = weighIn.map((r) => r.weightLb).filter((w): w is number => w !== null)
+    return {
+      ...kept,
+      readingCount: weighIn.length,
+      spreadLb: weights.length === 0 ? null : Math.max(...weights) - Math.min(...weights),
     }
-    return merged
   })
 
   return {
@@ -230,4 +254,19 @@ export function parseScaleCsv(text: string, opts: { massUnit?: MassUnit } = {}):
     massUnit,
     readings: readings.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
   }
+}
+
+const COMPOSITION_KEYS = VALUE_KEYS.filter((k) => k !== 'weightLb')
+
+function hasComposition(r: ScaleReading): boolean {
+  return COMPOSITION_KEYS.some((k) => r[k] !== null)
+}
+
+function hasWeight(r: ScaleReading): boolean {
+  return r.weightLb !== null
+}
+
+function lastWhere<T>(xs: readonly T[], pred: (x: T) => boolean): T | undefined {
+  for (let i = xs.length - 1; i >= 0; i--) if (pred(xs[i]!)) return xs[i]
+  return undefined
 }
