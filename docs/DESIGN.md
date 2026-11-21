@@ -157,6 +157,7 @@
 | `gymExerciseSettings` | `id, &[gymId+exerciseId]` | gymId, exerciseId, stepLb\|null, loadIncrementLb\|null (a gym's own machine jump) | editable |
 | `programDays` | `id, order` | name, weekday 0–6\|null, order, note, archivedAt\|null | editable |
 | `programSlots` | `id, programDayId, [programDayId+order], defaultExerciseId` | programDayId, order, label, defaultExerciseId, alternateExerciseIds[], sets, repMin, repMax, rirMin, rirMax, restMinSec, restMaxSec, note, archivedAt\|null | editable (only future sessions see the change) |
+| (v5) `programSlots.optional` | (not indexed) | boolean on every slot: an optional extra that counts when done (see `domain/volume.ts` `PlannedInclude`) | editable |
 | `gymSlotOverrides` | `id, &[gymId+slotId], slotId` | gymId, slotId, exerciseId (permanent per-gym swap) | editable |
 | `trackStarts` | `trackKey, exerciseId` | programDayId, exerciseId, gymScope, startLoadLb\|null, calibrate, recalibrationBadge, updatedAt | editable (ignored once the track has evaluated history) |
 | `sessions` | `id, date, status, startedAt, gymId, programDayId` | date, startedAt, finishedAt\|null, tzOffsetMin, status ('in_progress'\|'finished'\|'abandoned'), programDayId\|null, gymId, isDeload, jointPain, bodyweightLb\|null, bodyweightSource ('weighin'\|'trend'\|'seed'\|'manual'), note, voidedAt\|null, editedAt\|null, createdAt | see immutability rules below |
@@ -311,6 +312,11 @@ Core types: `LocalDate` (branded string), `Branch = 'start'|'calibration'|'calib
 - `setsCsv(...)` columns: date, session_id, session_status, program_day, gym, exercise, exercise_id, load_type, per_hand, set_index, is_warmup, load_lb, reps, rir, set_note, session_bodyweight_lb, is_deload.
 - `bodyCsv(...)`, `nutritionCsv(...)` and `cardioCsv(...)` (date, session_id, session_status, program_day, modality, minutes, intensity, avg_heart_rate, note).
 - Exports use lb and ISO dates, and exclude voided rows.
+
+**volume.ts: optional slots (schema v5)**
+- `plannedWeeklyVolume(slots, resolve, days?, include = 'required')` and `plannedDayVolume(slots, resolve, include = 'required')` count required slots unless asked for `'optional'` or `'all'`. `plannedOptionalVolume` gives the optional sets on offer, and `addVolume` adds two totals.
+- Planned flags judge required + optional. The per-session cap warning uses `'all'`. Logged volume counts whatever was done.
+- Session snapshots record `prescription.optional: true` only for optional slots. The logger's `prescribedSetCount` and the finish sheet's missed sets use required exercises only.
 
 **cardio.ts (schema v4, 2026-11-21)**
 - `cardioTarget({sessions, logs}, date, s): {minutes, weekStart, sessionsAtTarget, sessionsNeeded, nextMinutes, atMax}`. Replayed from history, never stored:

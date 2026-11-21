@@ -1,6 +1,6 @@
 # Exercise evidence review (2026-11-21)
 
-Every exercise in the program was reviewed for how well it builds its target muscle. Weak picks get a replacement, and the technique points that research ties to growth became the app's **growth cues** (`src/seed/growthCues.ts`). They show first in each exercise's Form sheet, and the first one shows on the logger card. The review used the user's logged data from 2026-09-25 to 11-11 for stalls and weekly volume.
+Every exercise in the program was reviewed for how well it builds its target muscle (the smaller-muscle review below was added the same day). Weak picks get a replacement, and the technique points that research ties to growth became the app's **growth cues** (`src/seed/growthCues.ts`). They show first in each exercise's Form sheet, and the first one shows on the logger card. The review used the user's logged data from 2026-09-25 to 11-11 for stalls and weekly volume.
 
 ## How to read it
 - **Hypertrophy trial:** muscle size measured before and after training (MRI or ultrasound). This is the strongest kind of evidence here.
@@ -83,6 +83,33 @@ Muscles under their weekly floor before the update (5-week averages): hamstrings
 - Upward-rotation shrug (EMG): [PubMed 24342452](https://pubmed.ncbi.nlm.nih.gov/24342452/)
 - Glute minimus growth from targeted hip work: [PMC8825882](https://pmc.ncbi.nlm.nih.gov/articles/PMC8825882)
 - Abdominal ultrasound, crunch vs leg raise: [PMC10446947](https://pmc.ncbi.nlm.nih.gov/articles/PMC10446947)
+
+## Smaller muscle groups (abdominals first)
+The program had one abdominal group (abs: cable crunches, 5 sets a week, exempt from "low") and nothing for the obliques or neck. All the additions below are **optional slots**: they count toward volume and progress when done, but aren't part of the required plan or a workout's planned-set count.
+
+| Area | Evidence | Decision |
+|---|---|---|
+| **Rectus abdominis** | Crunches thickened it most of the exercises tested, 36% more than leg raises (Gomirato & Grenier 2023, ultrasound). Rollouts and hanging knee-ups gave the highest abdominal activation, with less hip-flexor work for rollouts (EMG). Squats and deadlifts activate it weakly, and no trial shows they grow it. A 9-week trial found "upper" vs "lower" ab exercises didn't grow different regions | **Ab wheel rollout 3 × 8–15 on Push and Upper (optional)**; abs now count toward "low". With the rollouts done, abs go from 5 to about 13 sets a week |
+| **Obliques** | Side bridges, side bends and rollouts activate them strongly (EMG). There are no hypertrophy trials | **Cable woodchop 2 × 10–15 on Pull and Lower B (optional)**; Obliques tracked (about 7 sets a week when done) |
+| **Neck** | Direct head-extension training grew neck cross-section 13% in 12 weeks; the same program without it grew the neck 0% (Conley 1997) | **Neck extension and flexion 2 × 12–20 each on Lower A and Lower B (optional)**; Neck tracked (8 sets a week when done). Start light |
+| Visible abs | Ab training doesn't burn the fat over the abs (Vispute 2011; 2015 RCT), though a small 2023 trial disagrees | Body fat decides whether abs show |
+| Transverse abdominis | A deep stabiliser; it doesn't change appearance | Not added |
+| Forearms | No growth trials. Preacher curls grew the brachialis and brachioradialis more than incline curls (MRI, 12 weeks) | Covered by the preacher curl; not added |
+| Adductors | Full squats grew them about 2× more than half squats (Kubo 2019); the adductor magnus is a main hip extensor in squats | Covered by full-depth squats, split squats and RDLs; not added |
+| Serratus anterior | The push-up plus activates it most (EMG only) | Not added |
+| Hip flexors, soleus, lower back, rotator cuff | Covered by leg extensions (and any leg raises), standing calf raises (the soleus grew equally standing or seated, Kinoshita 2023), RDLs and back extensions, and face pulls | Not added |
+
+Sources:
+- Gomirato & Grenier 2023, ultrasound of crunch vs leg raise: [PMC10824285](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10824285/)
+- Abdominal exercise EMG: [PubMed 16494072](https://pubmed.ncbi.nlm.nih.gov/16494072/), [PubMed 16558218](https://pubmed.ncbi.nlm.nih.gov/16558218/)
+- Crunch protocols, acute: [PMC10446947](https://pmc.ncbi.nlm.nih.gov/articles/PMC10446947)
+- Trunk activation in squats and deadlifts: [PubMed 18076231](https://pubmed.ncbi.nlm.nih.gov/18076231/)
+- Regional ab training (thesis): [UFMG](https://repositorio.ufmg.br//bitstreams/ab000156-31a6-433f-8329-250395b2300a/download)
+- Oblique activation: [PMC4922527](https://pmc.ncbi.nlm.nih.gov/articles/PMC4922527), [PMC155519](https://pmc.ncbi.nlm.nih.gov/articles/PMC155519)
+- Conley 1997, neck training: [PubMed 9189733](https://pubmed.ncbi.nlm.nih.gov/9189733)
+- Spot reduction: [NSCA summary](https://www.nsca.com/contentassets/60c4deb55cd640549806ed8f3f170b9e/trainertips_spot-reduction.pdf), [2015 RCT](https://pubmed.ncbi.nlm.nih.gov/25766455/), [2023 trial](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10680576/)
+- Elbow flexor regional growth: [PMC11556575](https://pmc.ncbi.nlm.nih.gov/articles/PMC11556575/)
+- Push-up plus and serratus: [PubMed 14977678](https://pubmed.ncbi.nlm.nih.gov/14977678/)
 
 ## Cardio (added the same day)
 - Concurrent aerobic training doesn't compromise hypertrophy or maximal strength overall: [Schumann 2022](https://link.springer.com/article/10.1007/s40279-021-01587-7).

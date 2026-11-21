@@ -43,6 +43,7 @@ Use CSS Modules with the tokens in `src/styles/tokens.css`. Don't hard-code colo
 - **Regime line:** "4 × 6–10 · RIR 1–2 · rest 2–3 min".
 - **Cardio:** "Bike · 15 min · easy · 128 bpm" (`formatCardio`); targets in whole minutes ("Target this week: 15 min").
 - **Growth cue:** one line under the regime, "For growth: …", the cue only (the reason lives in the Form sheet).
+- **Optional:** a neutral "Optional" badge on the exercise (logger card and program slot list). Counts read "0 of 15 sets · +3 optional"; planned volume "116 sets + 18 optional"; an untouched optional exercise reads "Optional, skipped".
 - **Everything else:**
   - kcal with thousands separators ("3,000 kcal")
   - protein/fat/carbs in whole grams
