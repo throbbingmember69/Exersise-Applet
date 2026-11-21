@@ -17,7 +17,8 @@
 //    - Upper: cable rear delt fly 2 × 12–20 @ RIR 0–1 after the lateral raise and shrug (rear
 //      delts ~8 → ~10, now twice a week).
 //    - Push: lateral raise 3 → 4 sets (side delts ~9 → ~10; cable ≈ dumbbell, Larsen 2025).
-// 3. New and switched slots get calibration track starts (no load: the first session finds it).
+// 3. New and switched slots get calibration track starts (no load: the first session finds it),
+//    except bodyweight-plus ones, which start at +0 added load.
 import { gymScope, trackKey } from '@/domain/progression/keys'
 import type { Exercise, ProgramSlot, Regime } from '@/domain/types'
 import { type ProgramTables } from './update2026-10'
@@ -215,8 +216,9 @@ export function applyUpdate2026_11(t: ProgramTables): ProgramTables {
         programDayId: slot.programDayId,
         exerciseId: e.id,
         gymScope: scope,
-        startLoadLb: null,
-        calibrate: true,
+        // Bodyweight-plus starts at +0 (bodyweight); anything else finds its load first.
+        startLoadLb: e.loadType === 'bodyweight_plus' ? 0 : null,
+        calibrate: e.loadType !== 'bodyweight_plus',
         updatedAt: at,
       })
     }

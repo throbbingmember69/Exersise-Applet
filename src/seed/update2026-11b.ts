@@ -302,8 +302,9 @@ export function applyUpdate2026_11b(
         programDayId: slot.programDayId,
         exerciseId: e.id,
         gymScope: scope,
-        startLoadLb: null,
-        calibrate: true,
+        // Bodyweight-plus starts at +0 (bodyweight); anything else finds its load first.
+        startLoadLb: e.loadType === 'bodyweight_plus' ? 0 : null,
+        calibrate: e.loadType !== 'bodyweight_plus',
         updatedAt: at,
       })
     }

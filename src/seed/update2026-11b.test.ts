@@ -96,7 +96,11 @@ describe('applyUpdate2026_11b on the November program', () => {
     for (const d of after.programDays)
       expect(dayOf(after, d.id).map((s) => s.order)).toEqual(dayOf(after, d.id).map((_, i) => i))
     const added = after.trackStarts.filter((t) => !before.trackStarts.includes(t))
-    expect(added.every((t) => t.calibrate && t.startLoadLb === null)).toBe(true)
+    // Rollouts are bodyweight-plus: they start at +0; the cable and neck work calibrates.
+    for (const t of added)
+      expect([t.startLoadLb, t.calibrate]).toEqual(
+        t.exerciseId === 'ex-ab-wheel-rollout' ? [0, false] : [null, true],
+      )
     expect(added).toHaveLength(8)
   })
 

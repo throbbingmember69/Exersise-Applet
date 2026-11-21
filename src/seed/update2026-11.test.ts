@@ -112,7 +112,12 @@ describe('applyUpdate2026_11 on the October program', () => {
         'day-upper|ex-overhead-rope-extension|gym-1',
       ].sort(),
     )
-    for (const t of added) expect(t).toMatchObject({ startLoadLb: null, calibrate: true })
+    for (const t of added) {
+      // The back extension is bodyweight-plus: it starts at +0 instead of calibrating.
+      if (t.exerciseId === 'ex-back-extension')
+        expect(t).toMatchObject({ startLoadLb: 0, calibrate: false })
+      else expect(t).toMatchObject({ startLoadLb: null, calibrate: true })
+    }
   })
 
   it('plans 116 sets a week: hamstrings 12, rear delts 10, side delts 9.5, nothing over the session cap', () => {
