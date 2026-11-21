@@ -23,8 +23,9 @@ import { SPEC_TRACK_STARTS } from './trackStarts'
 import { applyUpdate2026_10 } from './update2026-10'
 import { applyUpdate2026_10b } from './update2026-10b'
 import { applyUpdate2026_11 } from './update2026-11'
+import { applyUpdate2026_11b } from './update2026-11b'
 
-export const SEED_VERSION = 4
+export const SEED_VERSION = 5
 
 export interface SeedData {
   profile: UserProfile
@@ -59,8 +60,11 @@ export const OCTOBER_SEED: SeedData = {
   ...applyUpdate2026_10b({ ...SPEC_SEED, ...applyUpdate2026_10(SPEC_SEED) }),
 }
 
+/** The seed after the November 21 program update (what a schema-v4 database was seeded with). */
+export const NOVEMBER_SEED: SeedData = { ...OCTOBER_SEED, ...applyUpdate2026_11(OCTOBER_SEED) }
+
 /** What a first launch writes: the spec seed plus the 2026 program updates, in order. */
-export const SEED: SeedData = { ...OCTOBER_SEED, ...applyUpdate2026_11(OCTOBER_SEED) }
+export const SEED: SeedData = { ...NOVEMBER_SEED, ...applyUpdate2026_11b(NOVEMBER_SEED) }
 
 export const SEED_EXERCISES = SEED.exercises
 export const SEED_PROGRAM_DAYS = SEED.programDays
@@ -87,6 +91,14 @@ export {
   INCLINE_CABLE_PRESS_ID,
   type ProgramTables,
 } from './update2026-10'
+export {
+  applyUpdate2026_11b,
+  NECK,
+  OBLIQUES,
+  SMALL_MUSCLE_EXERCISES,
+  SMALL_MUSCLE_SLOTS,
+  SMALL_MUSCLES_TRACKED_FROM,
+} from './update2026-11b'
 export {
   applyUpdate2026_11,
   NOVEMBER_NEW_SLOTS,

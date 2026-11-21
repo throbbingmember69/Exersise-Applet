@@ -743,22 +743,22 @@ describe('parseBackup: rejected files', () => {
   it('refuses a backup from a newer schema version before validating anything else', () => {
     const json = withChanges({ schemaVersion: BACKUP_SCHEMA_VERSION + 1, tables: 'a newer layout' })
     expect(errorsOf(json)).toEqual([
-      'schemaVersion: this backup was made by a newer version of the app (schema 5; this app reads schema 4). Update the app, then restore.',
+      'schemaVersion: this backup was made by a newer version of the app (schema 6; this app reads schema 5). Update the app, then restore.',
     ])
   })
 
   it('accepts only the current schema version (older files are migrated before validation)', () => {
     expect(errorsOf(withChanges({ schemaVersion: 0 }))).toEqual([
-      'schemaVersion: expected 4, got 0',
+      'schemaVersion: expected 5, got 0',
     ])
     expect(errorsOf(withChanges({ schemaVersion: 1 }))).toEqual([
-      'schemaVersion: expected 4, got 1',
+      'schemaVersion: expected 5, got 1',
     ])
     expect(errorsOf(withChanges({ schemaVersion: '3' }))).toEqual([
-      'schemaVersion: expected 4, got "3"',
+      'schemaVersion: expected 5, got "3"',
     ])
     expect(errorsOf(withChanges({ schemaVersion: REMOVE }))).toEqual([
-      'schemaVersion: expected 4 (missing)',
+      'schemaVersion: expected 5 (missing)',
     ])
   })
 

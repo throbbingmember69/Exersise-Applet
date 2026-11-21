@@ -40,9 +40,10 @@ export const BACKUP_FORMAT = 'exersise-applet-backup'
 /**
  * Schema 2 (October 10 2026): `Exercise.formUrl`. Schema 3 (October 18 2026): `Muscle.trackedFrom`.
  * Schema 4 (November 21 2026): the `cardioLogs` table and the November program update.
+ * Schema 5 (November 21 2026): `ProgramSlot.optional` and the smaller-muscles update.
  * Older files are migrated on import.
  */
-export const BACKUP_SCHEMA_VERSION = 4
+export const BACKUP_SCHEMA_VERSION = 5
 
 /** Every persisted table. This list is the Dexie table-name contract. */
 export const TABLE_NAMES = [

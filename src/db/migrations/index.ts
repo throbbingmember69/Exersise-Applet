@@ -13,6 +13,7 @@ import type { LocalDate } from '@/domain/types'
 import { applyUpdate2026_10, type ProgramTables } from '@/seed/update2026-10'
 import { applyUpdate2026_10b, type BackFocusTables } from '@/seed/update2026-10b'
 import { applyUpdate2026_11 } from '@/seed/update2026-11'
+import { applyUpdate2026_11b } from '@/seed/update2026-11b'
 
 /** Raw (unvalidated) rows per table name, as found in a backup file of some older version. */
 export type RawTables = Readonly<Record<string, unknown>>
@@ -132,8 +133,44 @@ export const v3ToV4: Migration = {
   },
 }
 
+/** The tables the smaller-muscles update reads and writes. */
+export const V5_TABLES = V3_TABLES
+
+/**
+ * v4 → v5 (November 21 2026, smaller muscles): `ProgramSlot.optional`, plus the update of
+ * seed/update2026-11b.ts (Obliques and Neck muscles, abs counted toward "low", the rollout,
+ * woodchop and neck exercises in optional slots). A damaged backup only gets the new field.
+ */
+export const v4ToV5: Migration = {
+  from: 4,
+  upgradeTables: (tables, ctx = {}) => {
+    const lists = V5_TABLES.map((name) => tables[name])
+    if (lists.every((rows) => Array.isArray(rows) && rows.every(isPlainObject))) {
+      try {
+        const input = Object.fromEntries(V5_TABLES.map((n) => [n, tables[n]]))
+        return {
+          ...tables,
+          ...applyUpdate2026_11b(input as unknown as BackFocusTables, {
+            trackedFrom: ctx.today,
+          }),
+        }
+      } catch {
+        // Rows that don't look like v4 rows: fall through to the field-only change.
+      }
+    }
+    const slots = tables.programSlots
+    if (!Array.isArray(slots)) return tables
+    return {
+      ...tables,
+      programSlots: slots.map((s: unknown) =>
+        isPlainObject(s) && !('optional' in s) ? { ...s, optional: false } : s,
+      ),
+    }
+  },
+}
+
 /** The chain, oldest first. */
-export const MIGRATIONS: readonly Migration[] = [v1ToV2, v2ToV3, v3ToV4]
+export const MIGRATIONS: readonly Migration[] = [v1ToV2, v2ToV3, v3ToV4, v4ToV5]
 
 export type MigrationErrorKind = 'newer_version' | 'missing_step'
 

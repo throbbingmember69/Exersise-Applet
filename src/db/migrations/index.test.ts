@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, parseBackup, TABLE_NAMES } from '@/db/backupSchema'
 import { seedRows } from '@/db/populate'
-import { OCTOBER_SEED, SPEC_SEED } from '@/seed'
+import { NOVEMBER_SEED, OCTOBER_SEED, SPEC_SEED } from '@/seed'
 import {
   MIGRATIONS,
   MigrationError,
@@ -10,6 +10,7 @@ import {
   migrateTables,
   v1ToV2 as realV1ToV2,
   v3ToV4 as realV3ToV4,
+  v4ToV5 as realV4ToV5,
   type Migration,
 } from '.'
 
@@ -111,7 +112,7 @@ describe('v1 → v2 (October 2026 update)', () => {
     const tables = v1Tables()
     const raw = deepFreeze(file(1, tables))
     const out = migrateBackup(raw) as { schemaVersion: number; tables: Record<string, unknown[]> }
-    expect(out.schemaVersion).toBe(4)
+    expect(out.schemaVersion).toBe(5)
     expect(out.tables.cardioLogs).toEqual([])
     for (const name of ['profile', 'sessions', 'setLogs', 'bodyEntries', 'nutritionEntries']) {
       expect(out.tables[name], name).toBe(tables[name])
@@ -161,16 +162,9 @@ describe('v3 → v4 (November 2026 update and cardio log)', () => {
     const tables = v3Tables()
     const raw = deepFreeze(file(3, tables))
     const out = migrateBackup(raw) as { schemaVersion: number; tables: Record<string, unknown[]> }
-    expect(out.schemaVersion).toBe(4)
+    expect(out.schemaVersion).toBe(5)
     expect(out.tables.cardioLogs).toEqual([])
-    for (const name of [
-      'profile',
-      'sessions',
-      'setLogs',
-      'bodyEntries',
-      'nutritionEntries',
-      'muscles',
-    ])
+    for (const name of ['profile', 'sessions', 'setLogs', 'bodyEntries', 'nutritionEntries'])
       expect(out.tables[name], name).toBe(tables[name])
     const result = parseBackup(out)
     expect(result.ok ? [] : result.errors).toEqual([])
@@ -189,6 +183,47 @@ describe('v3 → v4 (November 2026 update and cardio log)', () => {
       exercises: ['junk'],
       cardioLogs: [],
     })
+  })
+})
+
+describe('v4 → v5 (smaller muscles and optional slots)', () => {
+  /** A v4 backup's tables: the November seed (slots without `optional`) plus some history. */
+  function v4Tables(): Record<string, unknown[]> {
+    const tables = v1Tables()
+    const rows = seedRows(NOVEMBER_SEED) as unknown as Record<string, readonly unknown[]>
+    for (const name of ['muscles', 'exercises', 'programDays', 'programSlots', 'trackStarts'])
+      tables[name] = structuredClone([...(rows[name] ?? [])])
+    tables.programSlots = tables.programSlots!.map((row) => {
+      const { optional: _o, ...v4 } = row as Record<string, unknown>
+      return v4
+    })
+    tables.cardioLogs = []
+    return tables
+  }
+
+  it('adds the optional field, the new muscles, exercises and optional slots; history untouched', () => {
+    const tables = v4Tables()
+    const out = migrateBackup(deepFreeze(file(4, tables)), { today: '2026-11-24' as never }) as {
+      schemaVersion: number
+      tables: Record<string, Record<string, unknown>[]>
+    }
+    expect(out.schemaVersion).toBe(5)
+    for (const name of ['profile', 'sessions', 'setLogs', 'bodyEntries', 'cardioLogs'])
+      expect(out.tables[name], name).toBe(tables[name])
+    expect(parseBackup(out).ok).toBe(true)
+    const slots = out.tables.programSlots!
+    expect(slots.every((s) => typeof s.optional === 'boolean')).toBe(true)
+    expect(slots.filter((s) => s.optional).map((s) => s.id)).toHaveLength(8)
+    const muscle = (id: string) => out.tables.muscles!.find((m) => m.id === id)
+    expect(muscle('obliques')).toMatchObject({ trackedFrom: '2026-11-24', exemptLow: true })
+    expect(muscle('neck')).toMatchObject({ trackedFrom: '2026-11-24' })
+    expect(muscle('abs')).toMatchObject({ exemptLow: false })
+  })
+
+  it('only adds the optional field to a damaged file', () => {
+    expect(
+      realV4ToV5.upgradeTables({ programSlots: [{ id: 's1' }, 'junk'], muscles: 'oops' }),
+    ).toEqual({ programSlots: [{ id: 's1', optional: false }, 'junk'], muscles: 'oops' })
   })
 })
 

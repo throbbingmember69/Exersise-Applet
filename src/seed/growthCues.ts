@@ -261,6 +261,31 @@ export const GROWTH_CUES: Readonly<Record<string, readonly GrowthCue[]>> = {
   'ex-machine-triceps-extension': [
     { cue: 'Return slowly to a full elbow bend for the stretch.', why: FULL_STRETCH },
   ],
+  // ── Smaller muscles (2026-11-21) ──────────────────────────────────────────
+  'ex-ab-wheel-rollout': [
+    {
+      cue: 'Roll out until hips and arms are nearly straight, ribs down; don’t let the lower back sag.',
+      why: 'Rollouts load the abs stretched and gave some of the highest ab and oblique activation (EMG).',
+    },
+  ],
+  'ex-cable-woodchop': [
+    {
+      cue: 'Turn through your trunk with long arms and square hips; the arms only hold the handle.',
+      why: 'The obliques rotate the trunk; arm-driven chops shift the work away (EMG only, no growth trials).',
+    },
+  ],
+  'ex-neck-extension': [
+    {
+      cue: 'Slow, full range from chin-to-chest back to neutral; no jerking.',
+      why: 'Direct neck extensions grew the neck 13% in 12 weeks; lifting without them grew it 0% (Conley 1997).',
+    },
+  ],
+  'ex-neck-flexion': [
+    {
+      cue: 'Tuck the chin, curl up slowly through the full range, and lower under control.',
+      why: 'The neck grows only when trained directly (Conley 1997); flexion balances the extension work.',
+    },
+  ],
 }
 
 /** An exercise's growth cues ([] when it has none). */

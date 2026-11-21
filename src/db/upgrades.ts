@@ -9,9 +9,11 @@ import {
   V2_PROGRAM_TABLES,
   V3_TABLES,
   V4_PROGRAM_TABLES,
+  V5_TABLES,
   v1ToV2,
   v2ToV3,
   v3ToV4,
+  v4ToV5,
   type Migration,
   type MigrationContext,
 } from './migrations'
@@ -59,4 +61,10 @@ export function upgradeToV3(tx: Transaction, now: number = Date.now()): Promise<
  */
 export function upgradeToV4(tx: Transaction): Promise<void> {
   return runStep(tx, v3ToV4, V4_PROGRAM_TABLES)
+}
+
+/** Schema v4 → v5 (November 21 2026 smaller-muscles update and `ProgramSlot.optional`). */
+export function upgradeToV5(tx: Transaction, now: number = Date.now()): Promise<void> {
+  // Obliques and Neck count from the day the phone actually upgrades.
+  return runStep(tx, v4ToV5, V5_TABLES, { today: localDateOf(now) })
 }

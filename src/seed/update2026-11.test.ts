@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS } from '@/domain/settings/registry'
 import type { ProgramSlot } from '@/domain/types'
 import { overSessionCap, plannedDayVolume, plannedWeeklyVolume } from '@/domain/volume'
-import { OCTOBER_SEED, SEED } from './index'
+import { NOVEMBER_SEED, OCTOBER_SEED } from './index'
 import { type ProgramTables } from './update2026-10'
 import { applyUpdate2026_11, NOVEMBER_SWAPS } from './update2026-11'
 
@@ -147,7 +147,7 @@ describe('applyUpdate2026_11 on the October program', () => {
     // Untouched slots keep their identity (so a Dexie upgrade writes only what changed).
     const unchanged = after.programSlots.filter((s) => before.programSlots.includes(s))
     expect(unchanged.some((s) => s.id === 'slot-pull-1')).toBe(true)
-    expect(tablesOf(SEED)).toEqual(after)
+    expect(tablesOf(NOVEMBER_SEED)).toEqual(after)
   })
 })
 

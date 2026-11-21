@@ -799,6 +799,51 @@ export const FORM_GUIDES: Readonly<Record<string, FormGuide>> = {
       'Hold the top for a second, then lower slowly into a full stretch.',
     ],
   },
+  // Smaller muscles (2026-11-21); links checked live through YouTube oEmbed on 2026-11-21.
+  'ex-ab-wheel-rollout': {
+    videoUrl: 'https://www.youtube.com/watch?v=nCh8VfWY5_g',
+    title: 'How to do AB WHEEL Rollouts the Right Way (3 Tips!)',
+    channel: 'Redefining Strength',
+    cues: [
+      'Start on your knees with the wheel under your shoulders and your ribs pulled down.',
+      'Roll forward slowly, keeping a slight tuck in the pelvis so the lower back never sags.',
+      'Go only as far as you can hold that position, then pull back with your abs.',
+      'Progress range before load: knees, then longer rollouts, then standing.',
+    ],
+  },
+  'ex-cable-woodchop': {
+    videoUrl: 'https://www.youtube.com/watch?v=Gwcf4TOj1hc',
+    title: 'Cable Woodchop | Proper Form Tutorial for Core Rotation',
+    channel: 'FIT.nl',
+    cues: [
+      'Set the pulley high, stand side-on and hold the handle with both hands, arms long.',
+      'Rotate through your trunk to pull the handle down and across to the far hip.',
+      'Keep the arms fairly straight; the turn comes from the torso, not the arms.',
+      'Return slowly against the cable, then do the same reps on the other side.',
+    ],
+  },
+  'ex-neck-extension': {
+    videoUrl: 'https://www.youtube.com/watch?v=_qC3YtnRE2k',
+    title: 'NECK Pain & Posture Fix!! Lying Neck Extension with Plate',
+    channel: 'Dr. Joel Seedman',
+    cues: [
+      'Lie face down on a bench with your head off the end, a towel-wrapped plate on it.',
+      'Hold the plate with both hands and lower your chin toward your chest slowly.',
+      'Lift your head back to neutral or slightly past; don’t jerk or crank it.',
+      'Start very light: the neck responds well and gets sore easily at first.',
+    ],
+  },
+  'ex-neck-flexion': {
+    videoUrl: 'https://www.youtube.com/watch?v=U0sH-DhMIjw',
+    title: 'Bulletproof Your NECK!! Lying Neck Flexion with Plate Exercise',
+    channel: 'Dr. Joel Seedman',
+    cues: [
+      'Lie face up on a bench with your head off the end, a towel-wrapped plate on the forehead.',
+      'Hold the plate steady and let your head lower back slowly under control.',
+      'Tuck your chin and curl your head up toward your chest.',
+      'Use a light plate and a smooth tempo; stop if anything pinches.',
+    ],
+  },
 }
 
 /** A YouTube search for the exercise's form (for exercises without a curated guide). */

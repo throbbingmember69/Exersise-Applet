@@ -84,12 +84,12 @@ const byKey = (table: string, rows: Row[]) => {
   return [...rows].sort((a, b) => String(a[key]).localeCompare(String(b[key])))
 }
 
-describe('Dexie upgrades v1 → v2 → v3 → v4', () => {
+describe('Dexie upgrades v1 → v2 → v3 → v4 → v5', () => {
   it('keeps every history row byte-for-byte and updates only the library and program', async () => {
     const { name, rows } = await v1DatabaseWithHistory()
     const db = new AppDB(name)
     await db.open()
-    expect(db.verno).toBe(4)
+    expect(db.verno).toBe(5)
 
     for (const table of V1_TABLES) {
       if (PROGRAM_TABLES.has(table)) continue
@@ -159,6 +159,16 @@ describe('Dexie upgrades v1 → v2 → v3 → v4', () => {
       'ex-neutral-pulldown',
     )
 
+    // v5: the smaller-muscles update with optional slots.
+    expect(await db.muscles.get('obliques')).toMatchObject({ name: 'Obliques', exemptLow: true })
+    expect(await db.muscles.get('neck')).toMatchObject({ name: 'Neck' })
+    expect((await db.muscles.get('abs'))?.exemptLow).toBe(false)
+    expect(await db.programSlots.get('slot-push-ab-wheel')).toMatchObject({ optional: true })
+    expect((await db.programSlots.get('slot-upper-1'))?.optional).toBe(false)
+    expect((await db.programSlots.toArray()).every((s) => typeof s.optional === 'boolean')).toBe(
+      true,
+    )
+
     // The upgraded data works: the plan has the new glute volume, the logged press still counts.
     const ctx: ServiceCtx = { db, now: () => Date.UTC(2026, 9, 3, 18), newId: () => 'x' }
     const dash = await getVolumeDashboard(ctx, {
@@ -185,12 +195,12 @@ describe('Dexie upgrades v1 → v2 → v3 → v4', () => {
     db.close()
   })
 
-  it('opens a fresh database at v4 with the updated seed (no upgrade needed)', async () => {
+  it('opens a fresh database at v5 with the updated seed (no upgrade needed)', async () => {
     const name = `fresh-${crypto.randomUUID()}`
     names.push(name)
     const db = new AppDB(name)
     await db.open()
-    expect(db.verno).toBe(4)
+    expect(db.verno).toBe(5)
     expect((await db.programSlots.get('slot-pull-7'))?.defaultExerciseId).toBe('ex-bayesian-curl')
     expect(await db.cardioLogs.count()).toBe(0)
     expect((await db.programSlots.get('slot-upper-1'))?.defaultExerciseId).toBe(
