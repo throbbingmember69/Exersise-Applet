@@ -78,7 +78,7 @@ describe('previewScaleImport', () => {
     await c.db.settings.update('singleton', { values: { scaleSpreadWarnLb: 4 } })
     expect((await previewScaleImport(c, { text })).days[0]!.unsettled).toBe(false)
     await importScaleReadings(c, { text })
-    expect(await c.db.bodyEntries.get('2026-09-28')).toMatchObject({
+    expect(await c.db.bodyEntries.get('2026-09-28' as never)).toMatchObject({
       weightLb: 162.9,
       bodyFatPct: 14.2,
     })
