@@ -604,7 +604,7 @@ describe('seed track starts', () => {
 
 describe('seed bundle', () => {
   it('bundles every seeded table of the spec seed', () => {
-    expect(SEED_VERSION).toBe(3)
+    expect(SEED_VERSION).toBe(4)
     expect(SPEC_SEED.profile).toBe(SEED_PROFILE)
     expect(SPEC_SEED.bodyEntries).toEqual([SEED_BODY_ENTRY])
     expect(SPEC_SEED.muscles).toBe(SEED_MUSCLES)

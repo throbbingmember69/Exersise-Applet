@@ -36,7 +36,7 @@ describe('first-launch seed', () => {
     expect(await c.db.bodyEntries.toArray()).toEqual([...SEED.bodyEntries])
     expect(await c.db.exercises.count()).toBe(SEED.exercises.length)
     expect(await c.db.programDays.count()).toBe(5)
-    expect(await c.db.programSlots.count()).toBe(40)
+    expect(await c.db.programSlots.count()).toBe(42)
     expect(await c.db.trackStarts.count()).toBe(SEED.trackStarts.length)
     expect(await c.db.muscles.count()).toBe(14)
     expect(await c.db.gyms.count()).toBe(1)

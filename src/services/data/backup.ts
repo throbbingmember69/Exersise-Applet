@@ -33,6 +33,7 @@ export type TableCounts = { [K in TableName]: number }
 export const HISTORY_TABLES = [
   'sessions',
   'setLogs',
+  'cardioLogs',
   'bodyEntries',
   'nutritionEntries',
   'phases',
@@ -238,16 +239,25 @@ export async function getBackupReminder(
 
 export async function currentHistoryCounts(ctx: Pick<ServiceCtx, 'db'>): Promise<HistoryCounts> {
   const { db } = ctx
-  const [sessions, setLogs, bodyEntries, nutritionEntries, phases, targetRevisions, checkIns] =
-    await Promise.all([
-      db.sessions.count(),
-      db.setLogs.count(),
-      db.bodyEntries.filter((b) => b.source === 'user').count(),
-      db.nutritionEntries.count(),
-      db.phases.count(),
-      db.targetRevisions.count(),
-      db.checkIns.count(),
-    ])
+  const [
+    sessions,
+    setLogs,
+    cardioLogs,
+    bodyEntries,
+    nutritionEntries,
+    phases,
+    targetRevisions,
+    checkIns,
+  ] = await Promise.all([
+    db.sessions.count(),
+    db.setLogs.count(),
+    db.cardioLogs.count(),
+    db.bodyEntries.filter((b) => b.source === 'user').count(),
+    db.nutritionEntries.count(),
+    db.phases.count(),
+    db.targetRevisions.count(),
+    db.checkIns.count(),
+  ])
   const [exercises, gyms, programDays] = await Promise.all([
     db.exercises.toCollection().primaryKeys(),
     db.gyms.toCollection().primaryKeys(),
@@ -256,6 +266,7 @@ export async function currentHistoryCounts(ctx: Pick<ServiceCtx, 'db'>): Promise
   return {
     sessions,
     setLogs,
+    cardioLogs,
     bodyEntries,
     nutritionEntries,
     phases,
@@ -279,6 +290,7 @@ function historyCounts(t: BackupTables): HistoryCounts {
   return {
     sessions: t.sessions.length,
     setLogs: t.setLogs.length,
+    cardioLogs: t.cardioLogs.length,
     bodyEntries: t.bodyEntries.filter((b) => b.source === 'user').length,
     nutritionEntries: t.nutritionEntries.length,
     phases: t.phases.length,
@@ -416,6 +428,7 @@ function referenceErrors(t: BackupTables): string[] {
     check('setLogs', i, 'sessionId', r.sessionId, 'sessions')
     check('setLogs', i, 'sessionExerciseId', r.sessionExerciseId, 'sessionExercises')
   })
+  t.cardioLogs.forEach((r, i) => check('cardioLogs', i, 'sessionId', r.sessionId, 'sessions'))
   t.targetRevisions.forEach((r, i) => check('targetRevisions', i, 'phaseId', r.phaseId, 'phases'))
   t.checkIns.forEach((r, i) => check('checkIns', i, 'phaseId', r.phaseId, 'phases'))
   return errors

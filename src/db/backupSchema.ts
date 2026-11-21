@@ -12,6 +12,7 @@ import { isSettingKey } from '@/domain/settings/registry'
 import type {
   AppStateRow,
   BodyEntry,
+  CardioLog,
   CheckIn,
   EpochMs,
   Exercise,
@@ -38,9 +39,10 @@ import type {
 export const BACKUP_FORMAT = 'exersise-applet-backup'
 /**
  * Schema 2 (October 10 2026): `Exercise.formUrl`. Schema 3 (October 18 2026): `Muscle.trackedFrom`.
+ * Schema 4 (November 21 2026): the `cardioLogs` table and the November program update.
  * Older files are migrated on import.
  */
-export const BACKUP_SCHEMA_VERSION = 3
+export const BACKUP_SCHEMA_VERSION = 4
 
 /** Every persisted table. This list is the Dexie table-name contract. */
 export const TABLE_NAMES = [
@@ -58,6 +60,7 @@ export const TABLE_NAMES = [
   'sessions',
   'sessionExercises',
   'setLogs',
+  'cardioLogs',
   'bodyEntries',
   'nutritionEntries',
   'phases',
@@ -84,6 +87,7 @@ export interface TableRows {
   sessions: Session
   sessionExercises: SessionExercise
   setLogs: SetLog
+  cardioLogs: CardioLog
   bodyEntries: BodyEntry
   nutritionEntries: NutritionEntry
   phases: Phase
@@ -337,6 +341,20 @@ const setLogRow = z.object({
   voidedAt: z.nullable(epochMs),
 })
 
+const cardioLogRow = z.object({
+  id,
+  sessionId: id,
+  date: localDate,
+  modality: z.enum(['bike', 'incline_walk', 'elliptical', 'rower', 'stair', 'run', 'other']),
+  minutes: z.int().check(z.gte(1), z.lte(180)),
+  intensity: z.enum(['easy', 'moderate', 'hard']),
+  avgHeartRate: z.nullable(z.int().check(z.gte(30), z.lte(250))),
+  note: text,
+  loggedAt: epochMs,
+  editedAt: z.nullable(epochMs),
+  voidedAt: z.nullable(epochMs),
+})
+
 const bodyEntryRow = z.object({
   date: localDate,
   weightLb: z.nullable(positive),
@@ -478,6 +496,7 @@ export const rowSchemas = {
   sessions: sessionRow,
   sessionExercises: sessionExerciseRow,
   setLogs: setLogRow,
+  cardioLogs: cardioLogRow,
   bodyEntries: bodyEntryRow,
   nutritionEntries: nutritionEntryRow,
   phases: phaseRow,
@@ -535,6 +554,7 @@ export const PRIMARY_KEYS = {
   sessions: 'id',
   sessionExercises: 'id',
   setLogs: 'id',
+  cardioLogs: 'id',
   bodyEntries: 'date',
   nutritionEntries: 'date',
   phases: 'id',
@@ -563,6 +583,7 @@ export const backupSchema = z.object({
     sessions: z.array(sessionRow),
     sessionExercises: z.array(sessionExerciseRow),
     setLogs: z.array(setLogRow),
+    cardioLogs: z.array(cardioLogRow),
     bodyEntries: z.array(bodyEntryRow),
     nutritionEntries: z.array(nutritionEntryRow),
     phases: z.array(phaseRow),

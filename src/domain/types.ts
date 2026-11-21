@@ -273,6 +273,31 @@ export interface SetLog {
   voidedAt: EpochMs | null
 }
 
+/** Cardio machines (and running), for the post-workout cardio block. */
+export type CardioModality =
+  'bike' | 'incline_walk' | 'elliptical' | 'rower' | 'stair' | 'run' | 'other'
+
+/** Easy = conversational pace; hard = intervals. */
+export type CardioIntensity = 'easy' | 'moderate' | 'hard'
+
+/** Cardio done after a workout (one or more per session). */
+export interface CardioLog {
+  id: string
+  sessionId: string
+  /** Denormalized from the session (its local date) for querying. */
+  date: LocalDate
+  modality: CardioModality
+  /** Whole minutes, 1–180. */
+  minutes: number
+  intensity: CardioIntensity
+  /** Average heart rate in bpm, if the lifter noted it. */
+  avgHeartRate: number | null
+  note: string
+  loggedAt: EpochMs
+  editedAt: EpochMs | null
+  voidedAt: EpochMs | null
+}
+
 // ── Body and nutrition ───────────────────────────────────────────────────────
 
 export interface BodyEntry {

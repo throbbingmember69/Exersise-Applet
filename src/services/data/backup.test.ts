@@ -189,6 +189,19 @@ async function addRealisticHistory(c: Pick<ServiceCtx, 'db'>): Promise<void> {
     voidedAt: null,
     ...extra,
   })
+  await db.cardioLogs.add({
+    id: 'cardio-a1',
+    sessionId: 'sess-a1',
+    date: '2026-09-28' as LocalDate,
+    modality: 'bike',
+    minutes: 10,
+    intensity: 'easy',
+    avgHeartRate: null,
+    note: '',
+    loggedAt: Date.UTC(2026, 8, 28, 19),
+    editedAt: null,
+    voidedAt: null,
+  })
   await db.bodyEntries.bulkPut([
     body('2026-09-25', 163.2),
     body('2026-09-26', 162.8, {
@@ -442,6 +455,16 @@ describe('exportBackup', () => {
     expect(e2.detail?.errors).toEqual([
       'tables.gyms: expected at least 1 active (not archived) gym, got 0',
       'tables.trackStarts[0].programDayId: no programDays row has id "day-gone"',
+    ])
+  })
+
+  it('refuses a cardio row whose session is gone', async () => {
+    const c = ctx()
+    await addRealisticHistory(c)
+    await c.db.cardioLogs.update('cardio-a1', { sessionId: 'sess-gone' })
+    const e = await expectServiceError(exportBackup(c, { appVersion: '0.1.0' }), 'export_invalid')
+    expect(e.detail?.errors).toEqual([
+      'tables.cardioLogs[0].sessionId: no sessions row has id "sess-gone"',
     ])
   })
 })

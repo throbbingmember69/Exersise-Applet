@@ -56,7 +56,7 @@ describe('volume ramp prompts', () => {
       // Lats: Upper has 4.5 lat sets vs Pull's 7.5, so the Upper pulldown takes it.
       ['Lats', 'Lat pulldown', 'Upper', 3, 4],
       // Traps: 2 sets each on Push, Pull and Upper; the first in the week goes first.
-      ['Traps', 'Barbell shrug', 'Push', 2, 3],
+      ['Traps', 'DB shrug', 'Push', 2, 3],
     ])
     expect(ramps[0]).toMatchObject({ plannedNow: 12, plannedAfter: 13, bandMax: 20 })
     expect(ramps[1]).toMatchObject({ plannedNow: 6, plannedAfter: 7, bandMax: 16 })
@@ -123,7 +123,7 @@ describe('volume ramp prompts', () => {
     c.setNow(NOV_10 + 21 * DAY)
     const next = await getVolumeRamps(c, { today: d('2026-12-01') })
     expect(next.find((r) => r.muscleId === 'traps')).toMatchObject({
-      exerciseName: 'Barbell shrug',
+      exerciseName: 'DB shrug',
       fromSets: 2,
       dueDate: '2026-12-01',
     })

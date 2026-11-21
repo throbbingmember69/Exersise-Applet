@@ -12,6 +12,7 @@ import { BACKUP_FORMAT, BACKUP_SCHEMA_VERSION } from '@/db/backupSchema'
 import type { LocalDate } from '@/domain/types'
 import { applyUpdate2026_10, type ProgramTables } from '@/seed/update2026-10'
 import { applyUpdate2026_10b, type BackFocusTables } from '@/seed/update2026-10b'
+import { applyUpdate2026_11 } from '@/seed/update2026-11'
 
 /** Raw (unvalidated) rows per table name, as found in a backup file of some older version. */
 export type RawTables = Readonly<Record<string, unknown>>
@@ -106,8 +107,33 @@ export const v2ToV3: Migration = {
   },
 }
 
+/** The tables the November program update reads and writes. */
+export const V4_PROGRAM_TABLES = V2_PROGRAM_TABLES
+
+/**
+ * v3 → v4 (November 21 2026): the `cardioLogs` table (empty in older files), plus the November
+ * program update of seed/update2026-11.ts (five swaps, back extension and rear delt fly slots,
+ * a fourth Push lateral-raise set). A damaged backup only gets the new table.
+ */
+export const v3ToV4: Migration = {
+  from: 3,
+  upgradeTables: (tables) => {
+    const withCardio = Array.isArray(tables.cardioLogs) ? tables : { ...tables, cardioLogs: [] }
+    const lists = V4_PROGRAM_TABLES.map((name) => tables[name])
+    if (lists.every((rows) => Array.isArray(rows) && rows.every(isPlainObject))) {
+      try {
+        const input = Object.fromEntries(V4_PROGRAM_TABLES.map((n) => [n, tables[n]]))
+        return { ...withCardio, ...applyUpdate2026_11(input as unknown as ProgramTables) }
+      } catch {
+        // Rows that don't look like v3 rows: fall through to the table-only change.
+      }
+    }
+    return withCardio
+  },
+}
+
 /** The chain, oldest first. */
-export const MIGRATIONS: readonly Migration[] = [v1ToV2, v2ToV3]
+export const MIGRATIONS: readonly Migration[] = [v1ToV2, v2ToV3, v3ToV4]
 
 export type MigrationErrorKind = 'newer_version' | 'missing_step'
 

@@ -8,8 +8,10 @@ import { PRIMARY_KEYS } from './backupSchema'
 import {
   V2_PROGRAM_TABLES,
   V3_TABLES,
+  V4_PROGRAM_TABLES,
   v1ToV2,
   v2ToV3,
+  v3ToV4,
   type Migration,
   type MigrationContext,
 } from './migrations'
@@ -49,4 +51,12 @@ export function upgradeToV2(tx: Transaction): Promise<void> {
 export function upgradeToV3(tx: Transaction, now: number = Date.now()): Promise<void> {
   // The new muscle groups count from the day the phone actually upgrades.
   return runStep(tx, v2ToV3, V3_TABLES, { today: localDateOf(now) })
+}
+
+/**
+ * Schema v3 → v4 (November 21 2026 program update). Dexie creates the new, empty cardioLogs store
+ * itself; the step's cardioLogs default only matters for backups.
+ */
+export function upgradeToV4(tx: Transaction): Promise<void> {
+  return runStep(tx, v3ToV4, V4_PROGRAM_TABLES)
 }

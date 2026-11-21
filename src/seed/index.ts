@@ -1,6 +1,6 @@
 // The seed bundle written on first launch: the spec's profile and baseline, the muscle list, the
-// exercise library, the program and its start loads, with the October 2026 update applied (the
-// same transform that upgrades existing databases, so new and upgraded installs match). Pure data.
+// exercise library, the program and its start loads, with the 2026 program updates applied (the
+// same transforms that upgrade existing databases, so new and upgraded installs match). Pure data.
 // Bump SEED_VERSION when seed content changes; existing databases get the change through a schema
 // migration (db/migrations), never by re-seeding.
 import type {
@@ -22,8 +22,9 @@ import { SEED_GYMS, SPEC_PROGRAM_DAYS, SPEC_PROGRAM_SLOTS } from './program'
 import { SPEC_TRACK_STARTS } from './trackStarts'
 import { applyUpdate2026_10 } from './update2026-10'
 import { applyUpdate2026_10b } from './update2026-10b'
+import { applyUpdate2026_11 } from './update2026-11'
 
-export const SEED_VERSION = 3
+export const SEED_VERSION = 4
 
 export interface SeedData {
   profile: UserProfile
@@ -52,11 +53,14 @@ export const SPEC_SEED: SeedData = {
   gymExerciseSettings: [],
 }
 
-/** What a first launch writes: the spec seed plus the October 2026 updates, in order. */
-export const SEED: SeedData = {
+/** The seed as the October 2026 updates left it (what a schema-v3 database was seeded with). */
+export const OCTOBER_SEED: SeedData = {
   ...SPEC_SEED,
   ...applyUpdate2026_10b({ ...SPEC_SEED, ...applyUpdate2026_10(SPEC_SEED) }),
 }
+
+/** What a first launch writes: the spec seed plus the 2026 program updates, in order. */
+export const SEED: SeedData = { ...OCTOBER_SEED, ...applyUpdate2026_11(OCTOBER_SEED) }
 
 export const SEED_EXERCISES = SEED.exercises
 export const SEED_PROGRAM_DAYS = SEED.programDays
@@ -83,6 +87,12 @@ export {
   INCLINE_CABLE_PRESS_ID,
   type ProgramTables,
 } from './update2026-10'
+export {
+  applyUpdate2026_11,
+  NOVEMBER_NEW_SLOTS,
+  NOVEMBER_SWAPS,
+  NOVEMBER_UPDATE_MS,
+} from './update2026-11'
 export {
   applyUpdate2026_10b,
   BACK_FOCUS_EXERCISES,

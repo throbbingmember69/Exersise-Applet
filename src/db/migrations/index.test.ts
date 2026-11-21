@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, parseBackup, TABLE_NAMES } from '@/db/backupSchema'
 import { seedRows } from '@/db/populate'
-import { SPEC_SEED } from '@/seed'
+import { OCTOBER_SEED, SPEC_SEED } from '@/seed'
 import {
   MIGRATIONS,
   MigrationError,
@@ -9,6 +9,7 @@ import {
   migrateBackupWith,
   migrateTables,
   v1ToV2 as realV1ToV2,
+  v3ToV4 as realV3ToV4,
   type Migration,
 } from '.'
 
@@ -86,6 +87,7 @@ function v1Tables(): Record<string, unknown[]> {
   const rows = seedRows(SPEC_SEED) as unknown as Record<string, readonly Record<string, unknown>[]>
   const tables: Record<string, unknown[]> = {}
   for (const name of TABLE_NAMES) tables[name] = structuredClone([...(rows[name] ?? [])])
+  delete tables.cardioLogs // added in schema 4
   tables.exercises = tables.exercises!.map((e) => {
     const { formUrl: _formUrl, ...v1 } = e as Record<string, unknown>
     return v1
@@ -105,11 +107,12 @@ function v1Tables(): Record<string, unknown[]> {
 }
 
 describe('v1 → v2 (October 2026 update)', () => {
-  it('turns a v1 backup into a valid v2 one, leaving history tables untouched', () => {
+  it('turns a v1 backup into a valid current one, leaving history tables untouched', () => {
     const tables = v1Tables()
     const raw = deepFreeze(file(1, tables))
     const out = migrateBackup(raw) as { schemaVersion: number; tables: Record<string, unknown[]> }
-    expect(out.schemaVersion).toBe(3)
+    expect(out.schemaVersion).toBe(4)
+    expect(out.tables.cardioLogs).toEqual([])
     for (const name of ['profile', 'sessions', 'setLogs', 'bodyEntries', 'nutritionEntries']) {
       expect(out.tables[name], name).toBe(tables[name])
     }
@@ -140,6 +143,51 @@ describe('v1 → v2 (October 2026 update)', () => {
     expect(realV1ToV2.upgradeTables(tables)).toEqual({
       exercises: [{ id: 'ex-1', formUrl: null }, 'junk'],
       programSlots: 'oops',
+    })
+  })
+})
+
+describe('v3 → v4 (November 2026 update and cardio log)', () => {
+  /** A v3 backup's tables: the October seed plus a finished session, without cardioLogs. */
+  function v3Tables(): Record<string, unknown[]> {
+    const tables = v1Tables()
+    const rows = seedRows(OCTOBER_SEED) as unknown as Record<string, readonly unknown[]>
+    for (const name of ['muscles', 'exercises', 'programDays', 'programSlots', 'trackStarts'])
+      tables[name] = structuredClone([...(rows[name] ?? [])])
+    return tables
+  }
+
+  it('adds an empty cardio log and the November program, leaving history untouched', () => {
+    const tables = v3Tables()
+    const raw = deepFreeze(file(3, tables))
+    const out = migrateBackup(raw) as { schemaVersion: number; tables: Record<string, unknown[]> }
+    expect(out.schemaVersion).toBe(4)
+    expect(out.tables.cardioLogs).toEqual([])
+    for (const name of [
+      'profile',
+      'sessions',
+      'setLogs',
+      'bodyEntries',
+      'nutritionEntries',
+      'muscles',
+    ])
+      expect(out.tables[name], name).toBe(tables[name])
+    const result = parseBackup(out)
+    expect(result.ok ? [] : result.errors).toEqual([])
+    const slots = out.tables.programSlots as { id: string; defaultExerciseId: string }[]
+    expect(slots.find((s) => s.id === 'slot-lower-b-1')?.defaultExerciseId).toBe('ex-rdl')
+    expect(slots.some((s) => s.id === 'slot-lower-a-back-extension')).toBe(true)
+  })
+
+  it('keeps a cardio log a file already has, and only adds the table to a damaged file', () => {
+    const cardio = [{ id: 'c1' }]
+    expect(realV3ToV4.upgradeTables({ cardioLogs: cardio, programSlots: 'oops' })).toEqual({
+      cardioLogs: cardio,
+      programSlots: 'oops',
+    })
+    expect(realV3ToV4.upgradeTables({ exercises: ['junk'] })).toEqual({
+      exercises: ['junk'],
+      cardioLogs: [],
     })
   })
 })

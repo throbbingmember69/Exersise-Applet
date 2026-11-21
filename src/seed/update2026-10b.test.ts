@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS } from '@/domain/settings/registry'
 import type { ProgramSlot } from '@/domain/types'
 import { overSessionCap, plannedDayVolume, plannedWeeklyVolume } from '@/domain/volume'
-import { SEED, SPEC_SEED } from './index'
+import { OCTOBER_SEED, SPEC_SEED } from './index'
 import { applyUpdate2026_10 } from './update2026-10'
 import {
   applyUpdate2026_10b,
@@ -137,11 +137,11 @@ describe('applyUpdate2026_10b on the October 10 program', () => {
     expect(applyUpdate2026_10b(after)).toEqual(after)
   })
 
-  it('is what a first launch writes', () => {
-    expect(SEED.muscles).toEqual(after.muscles)
-    expect(SEED.exercises).toEqual(after.exercises)
-    expect(SEED.programSlots).toEqual(after.programSlots)
-    expect(SEED.trackStarts).toEqual(after.trackStarts)
+  it('is what a first launch wrote before the November update', () => {
+    expect(OCTOBER_SEED.muscles).toEqual(after.muscles)
+    expect(OCTOBER_SEED.exercises).toEqual(after.exercises)
+    expect(OCTOBER_SEED.programSlots).toEqual(after.programSlots)
+    expect(OCTOBER_SEED.trackStarts).toEqual(after.trackStarts)
   })
 })
 
@@ -194,6 +194,7 @@ describe('applyUpdate2026_10b respects what the user already changed', () => {
 })
 
 describe('the back-focus program', () => {
+  const SEED = OCTOBER_SEED
   const exercises = new Map(SEED.exercises.map((e) => [e.id, e]))
   const resolve = (slot: ProgramSlot) => exercises.get(slot.defaultExerciseId)
   const planned = plannedWeeklyVolume(SEED.programSlots, resolve, SEED.programDays)

@@ -8,6 +8,7 @@ import Dexie, { type EntityTable } from 'dexie'
 import type {
   AppStateRow,
   BodyEntry,
+  CardioLog,
   CheckIn,
   Exercise,
   Gym,
@@ -29,13 +30,13 @@ import type {
 } from '@/domain/types'
 import { SEED, type SeedData } from '@/seed'
 import { ensureSeeded, populateSeed } from './populate'
-import { upgradeToV2, upgradeToV3 } from './upgrades'
+import { upgradeToV2, upgradeToV3, upgradeToV4 } from './upgrades'
 
 /** Unique per origin: throbbingmember69.github.io is shared by all of the user's Pages sites. */
 export const DB_NAME = 'exersise-applet'
 
 /** Current Dexie schema version. Backups record it; older backups are migrated on import. */
-export const DB_SCHEMA_VERSION = 3
+export const DB_SCHEMA_VERSION = 4
 
 /** Table names in backup/export order. Must match TABLE_NAMES in db/backupSchema.ts. */
 export const DB_TABLES = [
@@ -53,6 +54,7 @@ export const DB_TABLES = [
   'sessions',
   'sessionExercises',
   'setLogs',
+  'cardioLogs',
   'bodyEntries',
   'nutritionEntries',
   'phases',
@@ -87,6 +89,11 @@ export const STORES_V1 = {
   suggestions: 'id, kind, &key, status',
 } as const
 
+/** Schema v4 adds the post-workout cardio log. */
+export const STORES_V4 = {
+  cardioLogs: 'id, sessionId, date',
+} as const
+
 export class AppDB extends Dexie {
   profile!: EntityTable<UserProfile, 'id'>
   settings!: EntityTable<SettingsRow, 'id'>
@@ -102,6 +109,7 @@ export class AppDB extends Dexie {
   sessions!: EntityTable<Session, 'id'>
   sessionExercises!: EntityTable<SessionExercise, 'id'>
   setLogs!: EntityTable<SetLog, 'id'>
+  cardioLogs!: EntityTable<CardioLog, 'id'>
   bodyEntries!: EntityTable<BodyEntry, 'date'>
   nutritionEntries!: EntityTable<NutritionEntry, 'date'>
   phases!: EntityTable<Phase, 'id'>
@@ -125,6 +133,10 @@ export class AppDB extends Dexie {
     this.version(3)
       .stores({})
       .upgrade((tx) => upgradeToV3(tx))
+    // v4 (November 21 2026): the cardioLogs table and the November program update.
+    this.version(4)
+      .stores(STORES_V4)
+      .upgrade((tx) => upgradeToV4(tx))
     if (opts.seed !== false) {
       const seed = typeof opts.seed === 'object' ? opts.seed : SEED
       this.on('populate', (tx) => populateSeed(tx, seed))

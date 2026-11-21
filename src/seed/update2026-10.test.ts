@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS } from '@/domain/settings/registry'
 import type { Exercise, ProgramSlot } from '@/domain/types'
 import { overSessionCap, plannedDayVolume, plannedWeeklyVolume } from '@/domain/volume'
 import { CATALOG_2026_10 } from './catalog'
-import { SEED, SPEC_SEED } from './index'
+import { OCTOBER_SEED, SPEC_SEED } from './index'
 import { applyUpdate2026_10b } from './update2026-10b'
 import {
   ABDUCTION_SLOTS,
@@ -115,7 +115,7 @@ describe('applyUpdate2026_10 on the spec seed', () => {
 
   it('is what a first launch writes, before the back-focus update', () => {
     const later = applyUpdate2026_10b({ ...after, muscles: SPEC_SEED.muscles })
-    expect(tablesOf(SEED)).toEqual(tablesOf(later))
+    expect(tablesOf(OCTOBER_SEED)).toEqual(tablesOf(later))
   })
 })
 

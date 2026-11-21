@@ -1,5 +1,6 @@
-// The October 2026 upgrade on a real (fake-indexeddb) database: a v1 database holding history is
-// opened by the v2 app. History must come through untouched; only the library and program change.
+// The 2026 upgrades on a real (fake-indexeddb) database: a v1 database holding history is opened
+// by the current app (v1 → v2 → v3 → v4). History must come through untouched; only the library and
+// program change, and v4 adds an empty cardio log.
 import Dexie from 'dexie'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createTestCtx, type ServiceCtx } from '@/services/context'
@@ -16,6 +17,8 @@ const names: string[] = []
 afterEach(async () => {
   for (const name of names.splice(0)) await Dexie.delete(name)
 })
+
+const V1_TABLES = TABLE_NAMES.filter((t) => t in STORES_V1)
 
 const PROGRAM_TABLES = new Set([
   'muscles',
@@ -55,9 +58,9 @@ async function v1DatabaseWithHistory(): Promise<{ name: string; rows: Record<str
   })
   await setGymSlotOverride(c, 'gym-1', 'slot-pull-3', 'ex-face-pull')
 
-  // Dump every table in its v1 shape (exercises had no formUrl).
+  // Dump every v1 table in its v1 shape (exercises had no formUrl; cardioLogs came in v4).
   const rows: Record<string, Row[]> = {}
-  for (const name of TABLE_NAMES) {
+  for (const name of V1_TABLES) {
     const all = (await c.db.table(name).toArray()) as Row[]
     rows[name] = name === 'exercises' ? all.map(({ formUrl: _formUrl, ...e }) => e) : all
   }
@@ -70,7 +73,7 @@ async function v1DatabaseWithHistory(): Promise<{ name: string; rows: Record<str
   v1.version(1).stores(STORES_V1)
   await v1.open()
   await v1.transaction('rw', v1.tables, async () => {
-    for (const table of TABLE_NAMES) await v1.table(table).bulkAdd(rows[table]!)
+    for (const table of V1_TABLES) await v1.table(table).bulkAdd(rows[table]!)
   })
   v1.close()
   return { name, rows }
@@ -81,14 +84,14 @@ const byKey = (table: string, rows: Row[]) => {
   return [...rows].sort((a, b) => String(a[key]).localeCompare(String(b[key])))
 }
 
-describe('Dexie upgrades v1 → v2 → v3', () => {
+describe('Dexie upgrades v1 → v2 → v3 → v4', () => {
   it('keeps every history row byte-for-byte and updates only the library and program', async () => {
     const { name, rows } = await v1DatabaseWithHistory()
     const db = new AppDB(name)
     await db.open()
-    expect(db.verno).toBe(3)
+    expect(db.verno).toBe(4)
 
-    for (const table of TABLE_NAMES) {
+    for (const table of V1_TABLES) {
       if (PROGRAM_TABLES.has(table)) continue
       expect(byKey(table, (await db.table(table).toArray()) as Row[]), table).toEqual(
         byKey(table, rows[table]!),
@@ -132,13 +135,29 @@ describe('Dexie upgrades v1 → v2 → v3', () => {
     expect((await db.programSlots.get('slot-upper-1'))?.defaultExerciseId).toBe(
       'ex-incline-smith-press',
     )
-    expect((await db.programSlots.get('slot-lower-a-abduction'))?.order).toBe(4)
+    // (Lower A's moved to 5 when v4 put the back extension after the leg curl.)
+    expect((await db.programSlots.get('slot-lower-a-abduction'))?.order).toBe(5)
     expect((await db.programSlots.get('slot-lower-b-abduction'))?.order).toBe(4)
     expect(await db.gymSlotOverrides.toArray()).toEqual(rows.gymSlotOverrides)
     expect(await db.trackStarts.get('day-upper|ex-incline-smith-press|gym-1')).toMatchObject({
       startLoadLb: null,
       calibrate: true,
     })
+
+    // v4: the November swaps and added slots, and an empty cardio log.
+    expect(await db.cardioLogs.count()).toBe(0)
+    expect((await db.programSlots.get('slot-lower-b-1'))?.defaultExerciseId).toBe('ex-rdl')
+    expect((await db.programSlots.get('slot-pull-7'))?.defaultExerciseId).toBe('ex-bayesian-curl')
+    expect((await db.programSlots.get('slot-upper-6'))?.defaultExerciseId).toBe(
+      'ex-overhead-rope-extension',
+    )
+    expect((await db.programSlots.get('slot-push-5'))?.sets).toBe(4)
+    expect(await db.programSlots.get('slot-lower-a-back-extension')).toMatchObject({ order: 3 })
+    expect(await db.programSlots.get('slot-upper-rear-delt-fly')).toBeDefined()
+    // The user's gym override on the Pull pulldown slot still wins over the new default.
+    expect((await db.programSlots.get('slot-pull-3'))?.defaultExerciseId).toBe(
+      'ex-neutral-pulldown',
+    )
 
     // The upgraded data works: the plan has the new glute volume, the logged press still counts.
     const ctx: ServiceCtx = { db, now: () => Date.UTC(2026, 9, 3, 18), newId: () => 'x' }
@@ -148,7 +167,9 @@ describe('Dexie upgrades v1 → v2 → v3', () => {
       gymId: 'gym-1',
     })
     const muscle = (id: string) => dash.muscles.find((m) => m.muscleId === id)!
-    expect(muscle('glutes').planned).toBe(16)
+    // 16 after October; the v4 back extension adds 3 × ½.
+    expect(muscle('glutes').planned).toBe(17.5)
+    expect(muscle('hamstrings').planned).toBe(12)
     expect(muscle('chest').logged).toBe(2)
 
     // v3: Back became Lats, Upper back and Traps are tracked, and the back plan grew.
@@ -164,12 +185,14 @@ describe('Dexie upgrades v1 → v2 → v3', () => {
     db.close()
   })
 
-  it('opens a fresh database at v2 with the updated seed (no upgrade needed)', async () => {
+  it('opens a fresh database at v4 with the updated seed (no upgrade needed)', async () => {
     const name = `fresh-${crypto.randomUUID()}`
     names.push(name)
     const db = new AppDB(name)
     await db.open()
-    expect(db.verno).toBe(3)
+    expect(db.verno).toBe(4)
+    expect((await db.programSlots.get('slot-pull-7'))?.defaultExerciseId).toBe('ex-bayesian-curl')
+    expect(await db.cardioLogs.count()).toBe(0)
     expect((await db.programSlots.get('slot-upper-1'))?.defaultExerciseId).toBe(
       'ex-incline-smith-press',
     )
