@@ -6,6 +6,7 @@
 // never guarded, so a negative load stays a number.
 import { compareLocalDate } from './dates'
 import { roundHalfAway } from './rounding'
+import { effectiveSessionBodyweight, weighInsByDate } from './trend'
 import type {
   BodyEntry,
   EpochMs,
@@ -98,6 +99,8 @@ export interface SetsCsvInput {
   setLogs: readonly SetLog[]
   programDays: readonly ProgramDay[]
   gyms: readonly Gym[]
+  /** The body log: session_bodyweight_lb is the date's weigh-in when there is one (see trend.ts). */
+  bodyEntries?: readonly BodyEntry[]
 }
 
 /**
@@ -110,6 +113,7 @@ export function setsCsv(input: SetsCsvInput, options?: CsvOptions): string {
   const sessionExercises = indexById(input.sessionExercises)
   const dayNames = new Map(input.programDays.map((d) => [d.id, d.name]))
   const gymNames = new Map(input.gyms.map((g) => [g.id, g.name]))
+  const weighIns = weighInsByDate(input.bodyEntries ?? [])
 
   const rows = input.setLogs
     .filter(isLive)
@@ -137,7 +141,7 @@ export function setsCsv(input: SetsCsvInput, options?: CsvOptions): string {
       set.reps,
       set.rir,
       set.note,
-      session?.bodyweightLb ?? null,
+      session ? effectiveSessionBodyweight(session, weighIns) : null,
       session?.isDeload ?? null,
     ])
 

@@ -34,13 +34,14 @@ async function csvText(ctx: Pick<ServiceCtx, 'db'>, kind: CsvKind): Promise<stri
     case 'sets': {
       const input = await db.transaction(
         'r',
-        [db.sessions, db.sessionExercises, db.setLogs, db.programDays, db.gyms],
+        [db.sessions, db.sessionExercises, db.setLogs, db.programDays, db.gyms, db.bodyEntries],
         async () => ({
           sessions: await db.sessions.toArray(),
           sessionExercises: await db.sessionExercises.toArray(),
           setLogs: await db.setLogs.toArray(),
           programDays: await db.programDays.toArray(),
           gyms: await db.gyms.toArray(),
+          bodyEntries: await db.bodyEntries.toArray(),
         }),
       )
       return setsCsv(input, options)

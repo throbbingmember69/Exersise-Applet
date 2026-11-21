@@ -50,19 +50,16 @@ export interface QueryData {
   muscles: readonly Muscle[]
   /** Raw appState 'lastGymId' value (may be stale or missing). */
   lastGymSetting: unknown
-  /** Body log entries: only read when asked for (`loadQueryData(ctx, { bodyEntries: true })`). */
+  /** Body log entries (the same rows as `data.bodyEntries`). */
   bodyEntries: readonly BodyEntry[]
   index: HistoryIndex
 }
 
 /**
- * One consistent read of everything the training views need. The body log is read only on
- * request, so live queries that don't need it don't re-run on every weigh-in.
+ * One consistent read of everything the training views need. The body log is part of it: a
+ * session's bodyweight-plus maths uses its date's weigh-in, which may be imported later.
  */
-export async function loadQueryData(
-  ctx: Pick<ServiceCtx, 'db'>,
-  opts: { bodyEntries?: boolean } = {},
-): Promise<QueryData> {
+export async function loadQueryData(ctx: Pick<ServiceCtx, 'db'>): Promise<QueryData> {
   const { db } = ctx
   const raw = await db.transaction(
     'r',
@@ -88,10 +85,14 @@ export async function loadQueryData(
       gyms: await db.gyms.orderBy('sortOrder').toArray(),
       muscles: await db.muscles.orderBy('sortOrder').toArray(),
       lastGymSetting: await getAppState<unknown>(ctx, LAST_GYM_KEY),
-      bodyEntries: opts.bodyEntries ? await db.bodyEntries.toArray() : [],
     }),
   )
-  return { ...raw, model: new TrainingModel(raw.data), index: new HistoryIndex(raw.data) }
+  return {
+    ...raw,
+    bodyEntries: raw.data.bodyEntries,
+    model: new TrainingModel(raw.data),
+    index: new HistoryIndex(raw.data),
+  }
 }
 
 /** A query's date argument, checked: ServiceError 'invalid_date' unless a real YYYY-MM-DD. */

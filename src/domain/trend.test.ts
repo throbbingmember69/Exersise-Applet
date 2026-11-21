@@ -7,12 +7,14 @@ import {
   bodyweightOn,
   buildTrend,
   dailyWeights,
+  effectiveSessionBodyweight,
   emaTrend,
   seedFallbackWeightLb,
   sevenDayAvg,
   trendOn,
   weeklyRatePct,
   weighInDates,
+  weighInsByDate,
   type DailyWeight,
 } from './trend'
 
@@ -286,5 +288,42 @@ describe('seed fallback bodyweight', () => {
     ).toBe(164)
     expect(seedFallbackWeightLb([entry('2026-09-26', 165)])).toBeNull()
     expect(bodyweightOn([], [], d('2026-09-26'))).toBeNull()
+  })
+})
+
+describe('effectiveSessionBodyweight', () => {
+  const weighIns = weighInsByDate([
+    entry('2026-10-05', 164.8, { updatedAt: 1 }),
+    entry('2026-10-05', 165.0, { updatedAt: 2 }),
+    entry('2026-10-06', 170, { voidedAt: 5 }),
+    entry('2026-10-07', 168, { source: 'seed' }),
+  ])
+  const session = (
+    bodyweightLb: number | null,
+    bodyweightSource: 'weighin' | 'trend' | 'seed' | 'manual',
+    date = '2026-10-05',
+  ) => ({ date: d(date), bodyweightLb, bodyweightSource })
+
+  it('maps each date to its latest live user weigh-in', () => {
+    expect([...weighIns]).toEqual([['2026-10-05', 165.0]])
+  })
+
+  it('uses a weigh-in that arrived after the session started over the stored trend value', () => {
+    // The user's batch scale imports: the session froze a stale trend (162.4), the real
+    // weigh-in for that morning was imported days later.
+    expect(effectiveSessionBodyweight(session(162.4, 'trend'), weighIns)).toBe(165.0)
+    expect(effectiveSessionBodyweight(session(163, 'seed'), weighIns)).toBe(165.0)
+    expect(effectiveSessionBodyweight(session(164.8, 'weighin'), weighIns)).toBe(165.0)
+    expect(effectiveSessionBodyweight(session(null, 'manual'), weighIns)).toBe(165.0)
+  })
+
+  it('keeps a value the lifter typed or edited', () => {
+    expect(effectiveSessionBodyweight(session(171, 'manual'), weighIns)).toBe(171)
+  })
+
+  it('falls back to the stored value without a live user weigh-in that day', () => {
+    expect(effectiveSessionBodyweight(session(162.4, 'trend', '2026-10-06'), weighIns)).toBe(162.4)
+    expect(effectiveSessionBodyweight(session(162.4, 'trend', '2026-10-07'), weighIns)).toBe(162.4)
+    expect(effectiveSessionBodyweight(session(null, 'trend', '2026-10-08'), weighIns)).toBeNull()
   })
 })

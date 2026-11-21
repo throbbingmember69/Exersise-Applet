@@ -568,6 +568,33 @@ describe('setsCsv', () => {
     expect(text).toContain(',"Downtown, 2nd floor",')
   })
 
+  it("writes the date's weigh-in as session bodyweight when the body log has one", () => {
+    const withLog = records(
+      setsCsv({
+        ...input,
+        bodyEntries: [
+          {
+            date: d('2026-10-02'),
+            weightLb: 170.4,
+            bodyFatPct: null,
+            muscleMassLb: null,
+            skeletalMusclePct: null,
+            subcutFatPct: null,
+            visceralRating: null,
+            source: 'user',
+            note: '',
+            createdAt: 0,
+            updatedAt: 0,
+            voidedAt: null,
+          },
+        ],
+      }),
+    )
+    const bw = (id: string) => withLog.find((r) => r.session_id === id)!.session_bodyweight_lb
+    expect(bw('s-fri')).toBe('170.4')
+    expect(bw('s-mon')).toBe('163.4')
+  })
+
   it('keeps bodyweight-plus added loads as plain numbers, including zero and assisted (negative)', () => {
     const chinRows = rows.filter((r) => r.exercise_id === 'ex-weighted-chinup')
     expect(

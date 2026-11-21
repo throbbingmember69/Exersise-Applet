@@ -6,7 +6,7 @@
 // until the first real weigh-in and never enter the trend.
 import { addDays, compareLocalDate, daysBetween } from '@/domain/dates'
 import { mean } from '@/domain/rounding'
-import type { BodyEntry, LocalDate, Settings } from '@/domain/types'
+import type { BodyEntry, BodyweightSource, LocalDate, Settings } from '@/domain/types'
 
 const DAYS_PER_WEEK = 7
 
@@ -57,6 +57,28 @@ function readingsOf(entries: readonly BodyEntry[], source: BodyEntry['source']):
 /** Dates with a real (non-voided, user) weigh-in, ascending. */
 export function weighInDates(entries: readonly BodyEntry[]): LocalDate[] {
   return readingsOf(entries, 'user').map((r) => r.date)
+}
+
+/** Each date's real weigh-in (non-voided user entry with a weight; the latest update wins). */
+export function weighInsByDate(entries: readonly BodyEntry[]): ReadonlyMap<LocalDate, number> {
+  return new Map(readingsOf(entries, 'user').map((r) => [r.date, r.weightLb]))
+}
+
+/**
+ * The bodyweight a session's bodyweight-plus maths uses (chin-up e1RM, stalls), decided when it's
+ * read, so the stored session row never changes. A value the lifter typed or edited ('manual')
+ * stands. Otherwise the session's date's real weigh-in wins when one exists now, even one imported
+ * after the session started (scale exports often arrive days later); else the stored value, which
+ * is the trend or seed fallback picked at the start, or null.
+ */
+export function effectiveSessionBodyweight(
+  session: { date: LocalDate; bodyweightLb: number | null; bodyweightSource: BodyweightSource },
+  weighIns: ReadonlyMap<LocalDate, number>,
+): number | null {
+  if (session.bodyweightSource === 'manual' && session.bodyweightLb !== null) {
+    return session.bodyweightLb
+  }
+  return weighIns.get(session.date) ?? session.bodyweightLb
 }
 
 /** One weight per calendar day from the first to the last real weigh-in; gaps interpolated. */

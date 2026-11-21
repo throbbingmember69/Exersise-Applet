@@ -1,7 +1,14 @@
 // Test helper: write a logged session straight into the database, the way the session service
 // would have (session row + prescription snapshots + set logs). Used by service tests only.
 import { parseLocalDate } from '@/domain/dates'
-import type { Branch, LoadType, Session, SessionExercise, SetLog } from '@/domain/types'
+import type {
+  BodyweightSource,
+  Branch,
+  LoadType,
+  Session,
+  SessionExercise,
+  SetLog,
+} from '@/domain/types'
 import type { ServiceCtx } from '../context'
 
 export type SetSpec =
@@ -28,6 +35,8 @@ export interface SessionSpec {
   isDeload?: boolean
   jointPain?: boolean
   bodyweightLb?: number | null
+  /** Defaults to 'manual' (the stored value always stands). */
+  bodyweightSource?: BodyweightSource
   voided?: boolean
   exercises: ExerciseSpec[]
 }
@@ -55,7 +64,7 @@ export async function insertSession(
     isDeload: spec.isDeload ?? false,
     jointPain: spec.jointPain ?? false,
     bodyweightLb: spec.bodyweightLb === undefined ? 163 : spec.bodyweightLb,
-    bodyweightSource: 'manual',
+    bodyweightSource: spec.bodyweightSource ?? 'manual',
     note: '',
     voidedAt: spec.voided ? startedAt + 7_200_000 : null,
     editedAt: null,

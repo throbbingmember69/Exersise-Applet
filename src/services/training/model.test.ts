@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import type { ProgramSlot } from '@/domain/types'
+import type { LocalDate, ProgramSlot } from '@/domain/types'
 import { createTestCtx } from '../context'
 import { loadTrainingModel, type TrainingModel } from './model'
 import { insertSession } from './testFixtures'
@@ -317,6 +317,39 @@ describe('series, stalls, deload and main lifts', () => {
       seriesKey: 'ex-weighted-chin-up|*',
       result: { stalled: true },
     })
+  })
+
+  it("uses the session date's weigh-in, even one imported after the session, for bodyweight-plus e1RM", async () => {
+    const c = ctx()
+    // Started before the morning's scale reading reached the app: the stale trend was stored.
+    await insertSession(c, {
+      ...pullDay('2026-09-02', 50, 6),
+      bodyweightLb: 162.4,
+      bodyweightSource: 'trend',
+    })
+    // Typed by the lifter: stands even with a weigh-in that day.
+    await insertSession(c, { ...pullDay('2026-09-09', 50, 6), bodyweightLb: 171 })
+    const weighIn = (date: string, weightLb: number) => ({
+      date: date as LocalDate,
+      weightLb,
+      bodyFatPct: null,
+      muscleMassLb: null,
+      skeletalMusclePct: null,
+      subcutFatPct: null,
+      visceralRating: null,
+      source: 'user' as const,
+      note: '',
+      createdAt: 0,
+      updatedAt: 0,
+      voidedAt: null,
+    })
+    await c.db.bodyEntries.bulkPut([weighIn('2026-09-02', 170), weighIn('2026-09-09', 175)])
+    const model = await loadTrainingModel(c)
+    const points = model.series('ex-weighted-chin-up', '*')
+    expect(points[0]!.value).toMatchObject({ kind: 'e1rm', totalLb: (170 + 50) * 1.2 })
+    expect(points[1]!.value).toMatchObject({ kind: 'e1rm', totalLb: (171 + 50) * 1.2 })
+    // The stored session row is unchanged.
+    expect((await c.db.sessions.toArray()).map((s) => s.bodyweightLb).sort()).toEqual([162.4, 171])
   })
 
   it('does not flag a series that keeps improving', async () => {

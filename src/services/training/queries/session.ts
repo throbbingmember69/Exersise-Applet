@@ -378,7 +378,7 @@ function summarizeExercise(
     next: tracked ? nextFor(model, session, se, deloadActive) : null,
     bestSet: bestSetOf(working, metricBasis(model, se), {
       loadType: se.loadType,
-      bodyweightLb: session.bodyweightLb,
+      bodyweightLb: model.bodyweightOf(session),
     }),
     isPr:
       counted && model.exercise(se.exerciseId)

@@ -21,7 +21,9 @@ import {
   type StallResult,
 } from '@/domain/stall'
 import { mainLiftSlide, type MainLiftSlide, type StrengthSeries } from '@/domain/strength'
+import { effectiveSessionBodyweight, weighInsByDate } from '@/domain/trend'
 import type {
+  BodyEntry,
   Exercise,
   GymScope,
   LocalDate,
@@ -56,6 +58,8 @@ export interface TrainingData {
   sessionExercises: readonly SessionExercise[]
   setLogs: readonly SetLog[]
   suggestions: readonly Suggestion[]
+  /** The body log: a session's bodyweight-plus maths uses its date's weigh-in when there is one. */
+  bodyEntries: readonly BodyEntry[]
 }
 
 export async function loadTrainingData(ctx: Pick<ServiceCtx, 'db'>): Promise<TrainingData> {
@@ -74,6 +78,7 @@ export async function loadTrainingData(ctx: Pick<ServiceCtx, 'db'>): Promise<Tra
       db.sessionExercises,
       db.setLogs,
       db.suggestions,
+      db.bodyEntries,
     ],
     async () => ({
       settings: await loadSettings(ctx),
@@ -87,6 +92,7 @@ export async function loadTrainingData(ctx: Pick<ServiceCtx, 'db'>): Promise<Tra
       sessionExercises: await db.sessionExercises.toArray(),
       setLogs: await db.setLogs.toArray(),
       suggestions: await db.suggestions.toArray(),
+      bodyEntries: await db.bodyEntries.toArray(),
     }),
   )
 }
@@ -142,11 +148,13 @@ export class TrainingModel {
   private readonly exercisesBySession = new Map<string, SessionExercise[]>()
   private readonly setsBySessionExercise = new Map<string, SetLog[]>()
   private readonly replayCache = new Map<string, Replay>()
+  private readonly weighIns: ReadonlyMap<LocalDate, number>
 
   constructor(readonly data: TrainingData) {
     this.settings = data.settings
     this.exercises = new Map(data.exercises.map((e) => [e.id, e]))
     this.trackStarts = new Map(data.trackStarts.map((t) => [t.trackKey, t]))
+    this.weighIns = weighInsByDate(data.bodyEntries)
     for (const slot of data.programSlots) {
       if (slot.archivedAt !== null) continue
       const list = this.slotsByDay.get(slot.programDayId) ?? []
@@ -190,6 +198,13 @@ export class TrainingModel {
 
   exercise(id: string): Exercise | undefined {
     return this.exercises.get(id)
+  }
+
+  /** The bodyweight bodyweight-plus maths uses for a session (see effectiveSessionBodyweight). */
+  bodyweightOf(
+    session: Pick<Session, 'date' | 'bodyweightLb' | 'bodyweightSource'>,
+  ): number | null {
+    return effectiveSessionBodyweight(session, this.weighIns)
   }
 
   /** Active (non-archived) slots of a day, in order. */
@@ -343,7 +358,7 @@ export class TrainingModel {
           isDeload: session.isDeload,
           isCalibration: se.suggestion.isCalibration,
           branch: se.suggestion.branch,
-          bodyweightLb: session.bodyweightLb,
+          bodyweightLb: this.bodyweightOf(session),
           sets: toWorkingSets(this.setsBySessionExercise.get(se.id) ?? []),
         })
       }

@@ -70,7 +70,7 @@ export async function getStartOptions(
   { today: todayInput }: { today: LocalDate },
 ): Promise<StartOptions> {
   const today = queryDate(todayInput, 'Today')
-  const q = await loadQueryData(ctx, { bodyEntries: true })
+  const q = await loadQueryData(ctx)
   const days = activeDays(q.data.programDays)
   const history = q.index.counted.filter((s) => compareLocalDate(s.date, today) <= 0)
   const lastDone = new Map<string, LocalDate>()
