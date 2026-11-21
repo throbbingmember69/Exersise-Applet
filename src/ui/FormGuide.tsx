@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Exercise } from '@/domain/types'
 import { youtubeEmbedUrl, type YouTubeVideo } from '@/domain/youtube'
 import { formGuideFor } from '@/seed/formGuides'
+import { growthCuesFor } from '@/seed/growthCues'
 import { cx } from './cx'
 import Icon from './Icon'
 import { Button } from './kit'
@@ -66,9 +67,25 @@ function InlineVideo({ video, title }: { video: YouTubeVideo; title: string }) {
 /** An exercise's form guide: written cues (work offline), the video in the app, a YouTube link. */
 export function FormGuideContent({ exercise }: { exercise: GuideExercise }) {
   const guide = formGuideFor(exercise)
+  const growth = growthCuesFor(exercise.id)
   const videoTitle = guide.title ?? `${exercise.name} form video`
   return (
     <div className={styles.stack}>
+      {growth.length > 0 ? (
+        <section aria-label="For growth">
+          <h3 className={styles.small} style={{ margin: '0 0 var(--space-1)' }}>
+            For growth
+          </h3>
+          <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
+            {growth.map((g) => (
+              <li key={g.cue} style={{ marginBottom: 'var(--space-1)' }}>
+                {g.cue}
+                <div className={cx(styles.muted, styles.small)}>{g.why}</div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {guide.cues.length > 0 ? (
         <ol style={{ margin: 0, paddingLeft: '1.25rem' }} aria-label="Form cues">
           {guide.cues.map((cue) => (

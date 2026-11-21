@@ -7,6 +7,7 @@ Offline-first, installable PWA (Android phone) for logging workouts, bodyweight 
 - `docs/DESIGN.md`: the detailed design (schema, algorithm contracts, screens, milestones).
 - `docs/PLAN.md`: the approved plan.
 - `docs/UI.md`: UI conventions for every screen (layout, components, states, number formats, accessibility).
+- `docs/EXERCISE-EVIDENCE.md`: the per-exercise efficacy review behind the program and its growth cues (with sources).
 - The spec `.md` at the repo root: rules, seed data and acceptance criteria.
 
 Ask the user before making architectural decisions not covered by these docs.

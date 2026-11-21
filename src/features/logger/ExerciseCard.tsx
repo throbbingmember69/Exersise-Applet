@@ -3,6 +3,7 @@ import { useCommand } from '@/app/hooks'
 import { formatMass } from '@/domain/units'
 import type { UnitSystem } from '@/domain/types'
 import type { LoggerExerciseView } from '@/services/training/queries'
+import { growthCuesFor } from '@/seed/growthCues'
 import { startRestTimer } from '@/services/training/restTimerState'
 import { logSet, removeExercise, updateSet, voidSet } from '@/services/training/session'
 import FormGuideButton from '@/ui/FormGuide'
@@ -75,6 +76,7 @@ export default function ExerciseCard({
 
   const editingSet = ex.sets.find((s) => s.id === editing) ?? null
   const notices = ex.suggestion.notices.map(noticeText).filter((t): t is string => t !== null)
+  const growthCue = growthCuesFor(ex.exerciseId)[0]
 
   return (
     <Card className={`${styles.exercise} ${ex.done ? styles.done : ''}`}>
@@ -84,6 +86,11 @@ export default function ExerciseCard({
           <div className={`${styles.muted} ${styles.small}`}>
             {formatRegime(ex.prescription, ex.prescription.sets)}
           </div>
+          {growthCue ? (
+            <div className={styles.small}>
+              <strong>For growth:</strong> {growthCue.cue}
+            </div>
+          ) : null}
         </div>
         <div>
           {ex.badge === 'set_load' ? <Badge tone="warn">Set load</Badge> : null}

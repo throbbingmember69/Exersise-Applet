@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { disposeCtx, renderScreen, type TestCtx } from '@/app/testing'
 import { SETTINGS_REGISTRY } from '@/domain/settings/registry'
-import { FORM_GUIDES } from '@/seed'
+import { FORM_GUIDES, GROWTH_CUES } from '@/seed'
 import { createTestCtx } from '@/services/context'
 import { loadSettings } from '@/services/settings'
 import { getRestTimer } from '@/services/training/restTimerState'
@@ -149,10 +149,20 @@ describe('Form guides', () => {
     const c = ctx()
     const id = await startSession(c, { gymId: 'gym-1', programDayId: 'day-lower-a' })
     renderScreen(<Logger />, { ctx: c, route: '/train/session/:id', path: `/train/session/${id}` })
+    // The card shows the first growth cue without opening the sheet.
+    expect(
+      await screen.findByText(GROWTH_CUES['ex-smith-squat']![0]!.cue, { selector: 'div' }),
+    ).toBeInTheDocument()
     await userEvent.click(
       await screen.findByRole('button', { name: 'Form guide for Smith machine squat' }),
     )
     const sheet = await screen.findByRole('dialog', { name: 'Form: Smith machine squat' })
+    // Growth cues come first, each with its reason.
+    const growth = within(sheet).getByRole('region', { name: 'For growth' })
+    for (const g of GROWTH_CUES['ex-smith-squat']!) {
+      expect(within(growth).getByText(g.cue)).toBeInTheDocument()
+      expect(within(growth).getByText(g.why)).toBeInTheDocument()
+    }
     const guide = FORM_GUIDES['ex-smith-squat']!
     for (const cue of guide.cues) expect(within(sheet).getByText(cue)).toBeInTheDocument()
     // The video plays inside the app; nothing loads from YouTube until it's tapped.

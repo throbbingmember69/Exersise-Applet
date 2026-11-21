@@ -72,6 +72,7 @@ export {
   type FormGuide,
   type ResolvedFormGuide,
 } from './formGuides'
+export { GROWTH_CUES, growthCuesFor, type GrowthCue } from './growthCues'
 export { SEED_MUSCLE_IDS, SEED_MUSCLES, type SeedMuscleId } from './muscles'
 export { SEED_BODY_ENTRY, SEED_DATE, SEED_EPOCH_MS, SEED_PROFILE } from './profile'
 export { SEED_GYM_ID, SEED_GYMS, SPEC_PROGRAM_DAYS, SPEC_PROGRAM_SLOTS } from './program'
