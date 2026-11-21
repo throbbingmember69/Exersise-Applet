@@ -343,7 +343,8 @@ The bottom navigation has five tabs: **Today · Train · Body · Food · More**.
 4. The logger shows one card per exercise:
    - regime line ("4 × 6–10 @ RIR 1–2 · rest 2:00–3:00")
    - last-session line and branch reason
-   - set rows: load stepper (± the resolved step, unit-aware), reps (prefilled target), RIR chips 0–5 (blank), warm-up toggle, Save
+   - set rows: load stepper (± the resolved step, unit-aware), reps (the target as placeholder; − / + start from it; **Hit target (N)** logs it), RIR chips 0–5 (blank), warm-up toggle, Save
+   - finish sheet: working sets without RIR, each with RIR chips (optional, never blocks)
    - Save writes the `setLog` immediately, so nothing is lost if the app crashes
 5. Saving starts the timer: a sticky bar counts down to the minimum rest, then the maximum, with +30 s and Skip.
 6. The exercise menu has: swap (alternates first, then the library; only while no sets are logged), note, "set starting load" (calibration), skip.

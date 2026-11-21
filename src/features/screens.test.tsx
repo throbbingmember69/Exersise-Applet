@@ -1,5 +1,6 @@
 // Screen-level acceptance tests (M3): settings are all editable; the logger pre-fills the
-// suggestion and starts the rest timer; a finished session is read-only until Edit.
+// suggested load (reps are a hint) and starts the rest timer; a finished session is read-only
+// until Edit.
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -49,20 +50,72 @@ describe('Settings screen', () => {
 })
 
 describe('Logger screen', () => {
-  it('pre-fills the suggested load and reps, logs a set and starts the rest timer', async () => {
+  it('pre-fills the suggested load, shows the rep target as a hint, logs a set and starts the rest timer', async () => {
     const c = ctx()
     const id = await startSession(c, { gymId: 'gym-1', programDayId: 'day-lower-a' })
     renderScreen(<Logger />, { ctx: c, route: '/train/session/:id', path: `/train/session/${id}` })
     const load = await screen.findByLabelText('Smith machine squat load (lb)')
     expect(load).toHaveValue('220')
-    expect(screen.getByLabelText('Smith machine squat reps')).toHaveValue('6')
+    const reps = screen.getByLabelText('Smith machine squat reps')
+    // The target is a placeholder, never a value: an untouched field can't log it.
+    expect(reps).toHaveValue('')
+    expect(reps).toHaveAttribute('placeholder', '6')
     const card = load.closest('section')!
-    await userEvent.click(within(card).getByRole('button', { name: 'Log set 1' }))
+    expect(within(card).getByRole('button', { name: 'Log set 1' })).toBeDisabled()
+    await userEvent.click(within(card).getByRole('button', { name: 'Hit target (6)' }))
     expect(await within(card).findByRole('button', { name: 'Edit set 1' })).toHaveTextContent(
       '220 lb × 6',
     )
     await waitFor(async () => expect((await getRestTimer(c))?.timer.restMinSec).toBe(120))
     expect(await screen.findByRole('timer')).toBeInTheDocument()
+  })
+
+  it('logs typed reps, and − / + start from the target', async () => {
+    const c = ctx()
+    const id = await startSession(c, { gymId: 'gym-1', programDayId: 'day-lower-a' })
+    renderScreen(<Logger />, { ctx: c, route: '/train/session/:id', path: `/train/session/${id}` })
+    const reps = await screen.findByLabelText('Smith machine squat reps')
+    const card = reps.closest('section')!
+    await userEvent.click(
+      within(card).getByRole('button', { name: 'Decrease Smith machine squat reps' }),
+    )
+    expect(reps).toHaveValue('5')
+    // With reps entered, only "Log set" remains.
+    expect(within(card).queryByRole('button', { name: /Hit target/ })).toBeNull()
+    await userEvent.click(within(card).getByRole('button', { name: 'Log set 1' }))
+    expect(await within(card).findByRole('button', { name: 'Edit set 1' })).toHaveTextContent(
+      '220 lb × 5',
+    )
+    // The next set starts blank again.
+    await waitFor(() => expect(reps).toHaveValue(''))
+  })
+
+  it('asks for missing RIR when finishing, without blocking it', async () => {
+    const c = ctx()
+    const id = await startSession(c, { gymId: 'gym-1', programDayId: 'day-lower-a' })
+    const row = (await c.db.sessionExercises.where('sessionId').equals(id).first())!
+    const first = await logSet(c, { sessionExerciseId: row.id, loadLb: 220, reps: 6 })
+    await logSet(c, { sessionExerciseId: row.id, loadLb: 220, reps: 6, rir: 2 })
+    renderScreen(<Logger />, { ctx: c, route: '/train/session/:id', path: `/train/session/${id}` })
+    await userEvent.click(await screen.findByRole('button', { name: 'Finish workout' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Finish workout' })
+    expect(
+      within(sheet).getByText(
+        '1 set has no RIR. Add reps in reserve if you remember them (optional).',
+      ),
+    ).toBeInTheDocument()
+    const chips = within(sheet).getByRole('group', { name: 'Smith machine squat set 1 RIR' })
+    await userEvent.click(within(chips).getByRole('button', { name: '1' }))
+    await waitFor(async () => expect((await c.db.setLogs.get(first))?.rir).toBe(1))
+    // The row stays, showing the new value.
+    await waitFor(() =>
+      expect(within(chips).getByRole('button', { name: '1' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      ),
+    )
+    await userEvent.click(within(sheet).getByRole('button', { name: 'Finish' }))
+    await waitFor(async () => expect((await c.db.sessions.get(id))?.status).toBe('finished'))
   })
 })
 

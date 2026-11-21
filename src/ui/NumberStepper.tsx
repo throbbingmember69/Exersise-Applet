@@ -14,6 +14,8 @@ export interface NumberStepperProps {
   /** Text shown for the value (defaults to the number itself). */
   format?: (value: number) => string
   placeholder?: string
+  /** Where − and + start from while the value is empty (e.g. the rep target shown as placeholder). */
+  bumpFrom?: number
 }
 
 /**
@@ -30,6 +32,7 @@ export default function NumberStepper({
   decimals = 1,
   format,
   placeholder = '–',
+  bumpFrom,
 }: NumberStepperProps) {
   const id = useId()
   const [draft, setDraft] = useState<string | null>(null)
@@ -50,7 +53,8 @@ export default function NumberStepper({
 
   const bump = (dir: 1 | -1) => {
     setDraft(null)
-    const base = value ?? (dir > 0 ? Math.max(0, min) : Math.max(0, min))
+    if (value === null && bumpFrom !== undefined) return onChange(clampRound(bumpFrom + dir * step))
+    const base = value ?? Math.max(0, min)
     onChange(clampRound(base + dir * step))
   }
 

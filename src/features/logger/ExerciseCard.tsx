@@ -41,7 +41,9 @@ export default function ExerciseCard({
   const [editing, setEditing] = useState<string | null>(null)
 
   const loadValue = load === undefined ? defaultLoad : load
-  const repsValue = reps === undefined ? targetReps : reps
+  // The rep target is a hint, not a value: reps are entered (or "Hit target" is tapped), so an
+  // untouched field never logs the target by accident (user decision 2026-11-21).
+  const repsValue = reps ?? null
 
   const log = useCommand(logSet)
   const restart = useCommand(startRestTimer)
@@ -49,12 +51,12 @@ export default function ExerciseCard({
   const remove = useCommand(voidSet)
   const drop = useCommand(removeExercise)
 
-  const onLog = async () => {
-    if (loadValue == null || repsValue == null) return
+  const onLog = async (repsToLog: number | null) => {
+    if (loadValue == null || repsToLog == null) return
     const id = await log.run({
       sessionExerciseId: ex.sessionExerciseId,
       loadLb: loadValue,
-      reps: repsValue,
+      reps: repsToLog,
       rir,
       isWarmup: warmup,
     })
@@ -156,6 +158,8 @@ export default function ExerciseCard({
             step={1}
             min={0}
             decimals={0}
+            placeholder={String(targetReps)}
+            bumpFrom={targetReps}
           />
         </div>
         <div className={styles.entryWide}>
@@ -163,10 +167,18 @@ export default function ExerciseCard({
         </div>
         <div className={styles.entryActions}>
           <Toggle label="Warm-up" checked={warmup} onChange={setWarmup} />
+          {!warmup && repsValue === null ? (
+            <Button
+              disabled={loadValue == null || log.pending}
+              onClick={() => void onLog(targetReps)}
+            >
+              Hit target ({targetReps})
+            </Button>
+          ) : null}
           <Button
             variant="primary"
             disabled={loadValue == null || repsValue == null || log.pending}
-            onClick={() => void onLog()}
+            onClick={() => void onLog(repsValue)}
           >
             Log {warmup ? 'warm-up' : `set ${nextIndex + 1}`}
           </Button>

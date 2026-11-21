@@ -25,6 +25,7 @@ import Sheet from '@/ui/Sheet'
 import Spinner from '@/ui/Spinner'
 import ExerciseCard from './ExerciseCard'
 import ExercisePicker from './ExercisePicker'
+import MissingRir from './MissingRir'
 import RestTimerBar from './RestTimerBar'
 import styles from './logger.module.css'
 
@@ -209,6 +210,7 @@ export default function Logger() {
               ? `${missing} planned ${missing === 1 ? 'set is' : 'sets are'} not logged. Unlogged exercises are skipped and keep their suggestion.`
               : 'All planned sets logged.'}
           </p>
+          {finishing ? <MissingRir exercises={view.exercises} unit={units} /> : null}
           <Toggle
             label="Joint pain today"
             hint="Flag it; pain in 2 of 3 sessions suggests a deload"
