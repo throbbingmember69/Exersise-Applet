@@ -88,6 +88,8 @@ export interface LoggerExerciseView {
   workingSetCount: number
   /** Working sets ≥ prescribed sets. */
   done: boolean
+  /** An optional slot: skippable, left out of the session's planned-set count. */
+  optional: boolean
   /** The most recent earlier counted session of the same track (same series when ad hoc). */
   lastTime: LastTimeView | null
 }
@@ -97,8 +99,14 @@ export interface LoggerView {
   dayName: string
   gymName: string
   exercises: LoggerExerciseView[]
+  /** Every working set logged, optional exercises included. */
   workingSetCount: number
+  /** Planned sets of the required exercises (optional ones are extras). */
   prescribedSetCount: number
+  /** Working sets logged on the required exercises (compare with prescribedSetCount). */
+  requiredWorkingSetCount: number
+  /** Working sets logged on optional exercises. */
+  optionalWorkingSetCount: number
 }
 
 /** The logger screen for a session; null if it doesn't exist. */
@@ -138,16 +146,22 @@ function buildLoggerView(q: QueryData, session: Session): LoggerView {
       sets: sets.map(setView),
       workingSetCount,
       done: workingSetCount >= se.prescription.sets,
+      optional: se.prescription.optional === true,
       lastTime: lastTimeFor(q, session, se),
     }
   })
+  const required = exercises.filter((e) => !e.optional)
+  const sumWorking = (list: readonly LoggerExerciseView[]) =>
+    list.reduce((n, e) => n + e.workingSetCount, 0)
   return {
     session,
     dayName: dayNameOf(q.data.programDays, session.programDayId),
     gymName: gymNameOf(q.gyms, session.gymId),
     exercises,
-    workingSetCount: exercises.reduce((n, e) => n + e.workingSetCount, 0),
-    prescribedSetCount: exercises.reduce((n, e) => n + e.prescription.sets, 0),
+    workingSetCount: sumWorking(exercises),
+    prescribedSetCount: required.reduce((n, e) => n + e.prescription.sets, 0),
+    requiredWorkingSetCount: sumWorking(required),
+    optionalWorkingSetCount: sumWorking(exercises.filter((e) => e.optional)),
   }
 }
 
@@ -235,6 +249,8 @@ export interface SummaryExerciseView {
   loadType: LoadType
   perHand: boolean
   isFinisher: boolean
+  /** An optional slot (a skipped one isn't a miss). */
+  optional: boolean
   outcome: ExerciseOutcome
   /** Misses in a row after this session ("Miss 1 of 2"); 0 unless the outcome is a miss. */
   missStreak: number
@@ -369,6 +385,7 @@ function summarizeExercise(
     loadType: se.loadType,
     perHand: se.perHand,
     isFinisher: se.isFinisher,
+    optional: se.prescription.optional === true,
     outcome,
     missStreak: outcome === 'miss' && result ? result.missStreakAfter : 0,
     baseLb: result?.baseLb ?? null,

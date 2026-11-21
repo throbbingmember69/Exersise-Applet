@@ -237,11 +237,24 @@ describe('program slots', () => {
       alternateExerciseIds: [],
       ...REGIME,
       sets: 2,
+      optional: false,
       note: '',
       archivedAt: null,
     })
     // "Just under; add a leg-curl set if they lag": hamstrings 9 → 11.
     expect(await weeklySets(c, 'hamstrings')).toBe(11)
+  })
+
+  it('marks a slot optional: it leaves the planned volume, and comes back when made required', async () => {
+    const c = ctx()
+    const id = await createSlot(c, 'day-lower-a', { ...legCurl, optional: true })
+    expect((await c.db.programSlots.get(id))?.optional).toBe(true)
+    expect(await weeklySets(c, 'hamstrings')).toBe(9)
+    await updateSlot(c, id, { optional: false })
+    expect(await weeklySets(c, 'hamstrings')).toBe(11)
+    await expect(updateSlot(c, id, { optional: 'yes' as never })).rejects.toSatisfy((e) =>
+      isServiceError(e, 'invalid_optional'),
+    )
   })
 
   it('cleans up alternates: no duplicates, never the default itself', async () => {

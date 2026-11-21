@@ -344,6 +344,7 @@ export function applyUpdate2026_10b(
       defaultExerciseId: exerciseId,
       alternateExerciseIds: alternates.filter((id) => isActive(id) && id !== exerciseId),
       ...n.regime,
+      optional: false,
       note: '',
       archivedAt: null,
     }

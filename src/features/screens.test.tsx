@@ -13,6 +13,7 @@ import { getRestTimer } from '@/services/training/restTimerState'
 import { finishSession, logSet, startSession } from '@/services/training/session'
 import SessionDetail from './history/SessionDetail'
 import Logger from './logger/Logger'
+import DayEditor from './program/DayEditor'
 import ExerciseEditor from './program/ExerciseEditor'
 import Settings from './settings'
 import Train from './train'
@@ -116,6 +117,42 @@ describe('Logger screen', () => {
     )
     await userEvent.click(within(sheet).getByRole('button', { name: 'Finish' }))
     await waitFor(async () => expect((await c.db.sessions.get(id))?.status).toBe('finished'))
+  })
+})
+
+describe('Optional exercises', () => {
+  it('carry a badge in the logger and stay out of the planned-set count', async () => {
+    const c = ctx()
+    await c.db.programSlots.update('slot-lower-a-6', { optional: true })
+    const id = await startSession(c, { gymId: 'gym-1', programDayId: 'day-lower-a' })
+    renderScreen(<Logger />, { ctx: c, route: '/train/session/:id', path: `/train/session/${id}` })
+    expect(await screen.findByText(/Gym 1 · 0 of 15 sets/)).toBeInTheDocument()
+    const card = screen.getByRole('heading', { name: 'Cable crunch' }).closest('section')!
+    expect(within(card).getByText('Optional')).toBeInTheDocument()
+    await userEvent.click(within(card).getByRole('button', { name: /^Hit target/ }))
+    expect(await screen.findByText(/0 of 15 sets · \+1 optional/)).toBeInTheDocument()
+  })
+
+  it('are switched on and off per slot in the program editor', async () => {
+    const c = ctx()
+    renderScreen(<DayEditor />, {
+      ctx: c,
+      route: '/program/day/:id',
+      path: '/program/day/day-lower-a',
+    })
+    await userEvent.click(await screen.findByRole('button', { name: /^Cable crunch/ }))
+    const sheet = await screen.findByRole('dialog', { name: 'Cable crunch' })
+    await userEvent.click(within(sheet).getByRole('checkbox', { name: /Optional/ }))
+    await waitFor(async () =>
+      expect((await c.db.programSlots.get('slot-lower-a-6'))?.optional).toBe(true),
+    )
+    // The sheet shows the saved value, and the slot list tags it.
+    await waitFor(() =>
+      expect(within(sheet).getByRole('checkbox', { name: /Optional/ })).toBeChecked(),
+    )
+    expect(
+      await screen.findByRole('button', { name: /^Cable crunch\s+Optional/ }),
+    ).toBeInTheDocument()
   })
 })
 

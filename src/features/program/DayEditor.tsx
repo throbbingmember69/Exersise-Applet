@@ -22,7 +22,7 @@ import {
 import ExercisePicker from '@/features/logger/ExercisePicker'
 import ConfirmDialog from '@/ui/ConfirmDialog'
 import { formatRegime } from '@/ui/format'
-import { Badge, Button, Card, EmptyState, Field, PageHeader, Stack } from '@/ui/kit'
+import { Badge, Button, Card, EmptyState, Field, PageHeader, Stack, Toggle } from '@/ui/kit'
 import kit from '@/ui/kit.module.css'
 import NumberStepper from '@/ui/NumberStepper'
 import PromptSheet from '@/ui/PromptSheet'
@@ -133,6 +133,7 @@ export default function DayEditor() {
                   <div className={styles.slotName}>
                     {s.exercise?.name ?? 'Missing exercise'}{' '}
                     {s.isOverride ? <Badge>Gym swap</Badge> : null}
+                    {s.slot.optional ? <Badge>Optional</Badge> : null}
                   </div>
                   <div className={styles.hint}>{formatRegime(s.slot)}</div>
                 </button>
@@ -203,7 +204,10 @@ export default function DayEditor() {
         }}
       />
       <SlotSheet
-        slot={editing}
+        // The live view, so the sheet shows what was just saved (optional, swaps).
+        slot={
+          editing ? (dayView.slots.find((x) => x.slot.id === editing.slot.id) ?? editing) : null
+        }
         gymId={gymId}
         gymName={overview.gym?.name ?? ''}
         onClose={() => setEditing(null)}
@@ -309,6 +313,13 @@ function SlotForm({
       >
         Save sets and reps
       </Button>
+
+      <Toggle
+        label="Optional"
+        hint="Skippable: counts toward volume when done, but not toward the planned sets"
+        checked={s.optional}
+        onChange={(optional) => void save.run(s.id, { optional })}
+      />
 
       <Field label="Exercise">
         <Button block onClick={() => setPicking('default')}>

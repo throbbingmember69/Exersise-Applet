@@ -3,12 +3,14 @@ import { parseLocalDate } from './dates'
 import { DEFAULT_SETTINGS } from './settings/registry'
 import type { EpochMs, LocalDate, Muscle, MuscleWeights, SessionStatus } from './types'
 import {
+  addVolume,
   countsTowardVolume,
   countWorkingSets,
   loggedSessionVolume,
   muscleFlags,
   overSessionCap,
   plannedDayVolume,
+  plannedOptionalVolume,
   plannedWeeklyVolume,
   resolveBand,
   volumeFlag,
@@ -44,6 +46,7 @@ interface TestSlot {
   gymExerciseId?: string
   sets: number
   archivedAt: EpochMs | null
+  optional?: boolean
 }
 
 function slot(
@@ -165,6 +168,58 @@ describe('plannedDayVolume', () => {
     )
     expect(obj(v.byMuscle)).toEqual({ chest: 3, front_delts: 1.5, triceps: 4.5 })
     expect(v.totalSets).toBe(6)
+  })
+})
+
+describe('optional slots', () => {
+  const slots = deepFreeze([
+    slot('a', 'day-1', 'ex-press', 3),
+    { ...slot('b', 'day-1', 'ex-curl', 2), optional: true },
+    { ...slot('c', 'day-2', 'ex-press', 2), optional: true },
+    { ...slot('d', 'day-2', 'ex-squat', 3), optional: false },
+  ])
+  const days = deepFreeze([
+    { id: 'day-1', archivedAt: null },
+    { id: 'day-2', archivedAt: null },
+  ])
+
+  it('are left out of planned volume by default: they count once they are done', () => {
+    const v = plannedWeeklyVolume(slots, byDefault, days)
+    expect(obj(v.byMuscle)).toEqual({
+      chest: 3,
+      front_delts: 1.5,
+      triceps: 1.5,
+      quads: 3,
+      glutes: 1.5,
+    })
+    expect(v.totalSets).toBe(6)
+  })
+
+  it('are what plannedOptionalVolume sums', () => {
+    const v = plannedOptionalVolume(slots, byDefault, days)
+    expect(obj(v.byMuscle)).toEqual({ biceps: 2, chest: 2, front_delts: 1, triceps: 1 })
+    expect(v.totalSets).toBe(4)
+  })
+
+  it("count in a day's volume when asked for every slot (the per-session cap)", () => {
+    const day1 = slots.filter((s) => s.programDayId === 'day-1')
+    expect(plannedDayVolume(day1, byDefault).totalSets).toBe(3)
+    expect(plannedDayVolume(day1, byDefault, 'optional').totalSets).toBe(2)
+    expect(obj(plannedDayVolume(day1, byDefault, 'all').byMuscle)).toEqual({
+      chest: 3,
+      front_delts: 1.5,
+      triceps: 1.5,
+      biceps: 2,
+    })
+  })
+
+  it('add up with addVolume', () => {
+    const all = addVolume(
+      plannedWeeklyVolume(slots, byDefault, days),
+      plannedOptionalVolume(slots, byDefault, days),
+    )
+    expect(all.totalSets).toBe(10)
+    expect(all).toEqual(plannedWeeklyVolume(slots, byDefault, days, 'all'))
   })
 })
 

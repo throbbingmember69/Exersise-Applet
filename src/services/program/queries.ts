@@ -4,7 +4,9 @@
 import {
   muscleFlags,
   overSessionCap,
+  addVolume,
   plannedDayVolume,
+  plannedOptionalVolume,
   plannedWeeklyVolume,
   resolveBand,
   type MuscleVolume,
@@ -79,17 +81,24 @@ export interface ProgramDayView {
   archived: boolean
   /** Every slot of the day in order, archived ones included (flagged). */
   slots: ProgramSlotView[]
-  /** Planned volume of one session of this day (active slots only). */
+  /** Planned volume of one session of this day (active, required slots only). */
   volume: PlannedVolumeView
-  /** Muscles strictly above the per-session cap. */
+  /** Working sets in the day's active optional slots (counted only when done). */
+  optionalSets: number
+  /** Muscles strictly above the per-session cap, optional slots included. */
   overSessionCap: MuscleSets[]
 }
 
 export interface WeeklyMuscleView extends MuscleSets {
+  /** Fractional sets the optional slots add when done (`sets` is the required plan). */
+  optional: number
   band: VolumeBand
   /** The band comes from the global settings (the muscle has no band of its own). */
   bandIsDefault: boolean
-  /** 'low' / 'ok' / 'high' against the band; null when 'low' is suppressed (exempt muscle). */
+  /**
+   * 'low' / 'ok' / 'high' against the band for required + optional sets (what the plan offers);
+   * null when 'low' is suppressed (exempt muscle).
+   */
   flag: VolumeFlag | null
   exemptLow: boolean
   lagging: boolean
@@ -100,8 +109,8 @@ export interface ProgramOverview {
   gym: { id: string; name: string; archived: boolean } | null
   /** Days in program order, archived ones included (flagged). */
   days: ProgramDayView[]
-  /** Planned weekly volume of active days and slots. */
-  weekly: { totalSets: number; muscles: WeeklyMuscleView[] }
+  /** Planned weekly volume of active days and required slots, plus the optional sets on offer. */
+  weekly: { totalSets: number; optionalSets: number; muscles: WeeklyMuscleView[] }
   sessionCap: number
 }
 
@@ -147,27 +156,32 @@ export async function getProgramOverview(
 
   const days = byOrder(data.days).map((day): ProgramDayView => {
     const slots = byOrder(data.slots.filter((s) => s.programDayId === day.id))
-    const volume = plannedDayVolume(slots, (s) => resolve(s).exercise)
+    const exerciseOf = (s: ProgramSlot) => resolve(s).exercise
+    const volume = plannedDayVolume(slots, exerciseOf)
+    const everything = plannedDayVolume(slots, exerciseOf, 'all')
     return {
       day,
       archived: day.archivedAt !== null,
       slots: slots.map((slot) => slotView(slot, resolve(slot), exercises)),
       volume: volumeView(volume.totalSets, volume.byMuscle, muscles),
-      overSessionCap: overSessionCap(volume.byMuscle, settings.sessionCap).map((muscleId) => ({
+      optionalSets: plannedDayVolume(slots, exerciseOf, 'optional').totalSets,
+      overSessionCap: overSessionCap(everything.byMuscle, settings.sessionCap).map((muscleId) => ({
         muscleId,
         name: muscleNames.get(muscleId) ?? muscleId,
-        sets: volume.byMuscle.get(muscleId)!,
+        sets: everything.byMuscle.get(muscleId)!,
       })),
     }
   })
 
   const weekly = plannedWeeklyVolume(data.slots, (s) => resolve(s).exercise, data.days)
+  const optional = plannedOptionalVolume(data.slots, (s) => resolve(s).exercise, data.days)
   return {
     gym: gym && { id: gym.id, name: gym.name, archived: gym.archivedAt !== null },
     days,
     weekly: {
       totalSets: weekly.totalSets,
-      muscles: weeklyMuscles(weekly.byMuscle, muscles, settings),
+      optionalSets: optional.totalSets,
+      muscles: weeklyMuscles(weekly.byMuscle, optional.byMuscle, muscles, settings),
     },
     sessionCap: settings.sessionCap,
   }
@@ -543,16 +557,22 @@ function orderedMuscleSets(byMuscle: MuscleVolume, muscles: readonly Muscle[]): 
 
 function weeklyMuscles(
   byMuscle: MuscleVolume,
+  optionalByMuscle: MuscleVolume,
   muscles: readonly Muscle[],
   settings: Settings,
 ): WeeklyMuscleView[] {
-  const flags = muscleFlags(byMuscle, muscles, settings, { weekComplete: true, deloadWeek: false })
+  const offered = addVolume(
+    { byMuscle, totalSets: 0 },
+    { byMuscle: optionalByMuscle, totalSets: 0 },
+  ).byMuscle
+  const flags = muscleFlags(offered, muscles, settings, { weekComplete: true, deloadWeek: false })
   const active = muscles
     .filter((m) => m.archivedAt === null)
     .map((m): WeeklyMuscleView => ({
       muscleId: m.id,
       name: m.name,
       sets: byMuscle.get(m.id) ?? 0,
+      optional: optionalByMuscle.get(m.id) ?? 0,
       band: resolveBand(m, settings),
       bandIsDefault: m.bandMin === null && m.bandMax === null,
       flag: flags.get(m.id) ?? null,
@@ -561,10 +581,12 @@ function weeklyMuscles(
     }))
   // Volume on archived or unknown muscles is still shown, without a verdict.
   const shown = new Set(active.map((m) => m.muscleId))
-  const extra = orderedMuscleSets(byMuscle, muscles)
+  const extra = orderedMuscleSets(offered, muscles)
     .filter((m) => !shown.has(m.muscleId))
     .map((m): WeeklyMuscleView => ({
       ...m,
+      sets: byMuscle.get(m.muscleId) ?? 0,
+      optional: optionalByMuscle.get(m.muscleId) ?? 0,
       band: { min: settings.weeklyVolumeMin, max: settings.weeklyVolumeMax },
       bandIsDefault: true,
       flag: null,

@@ -241,6 +241,7 @@ const programSlotRow = z.object({
   label: text,
   defaultExerciseId: id,
   alternateExerciseIds: z.array(id),
+  optional: bool,
   note: text,
   archivedAt: z.nullable(epochMs),
 })
@@ -311,7 +312,12 @@ const sessionExerciseRow = z.object({
   isFinisher: bool,
   swappedFromExerciseId: z.nullable(id),
   swapKind: z.enum(['none', 'one_off', 'gym_override']),
-  prescription: z.object({ ...regimeShape, setsBeforeDeload: count, stepLb: positive }),
+  prescription: z.object({
+    ...regimeShape,
+    setsBeforeDeload: count,
+    stepLb: positive,
+    optional: z.optional(bool),
+  }),
   muscleWeights,
   suggestion: z.object({
     loadLb: z.nullable(num),

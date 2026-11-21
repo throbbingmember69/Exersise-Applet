@@ -26,6 +26,9 @@ function BandBar({ row, mode }: { row: VolumeMuscleRow; mode: 'logged' | 'planne
         <span className={styles.value}>
           {fmt(value)}
           {mode === 'logged' ? <span className={styles.muted}> / {fmt(row.planned)}</span> : null}
+          {row.plannedOptional > 0 ? (
+            <span className={styles.muted}> +{fmt(row.plannedOptional)} optional</span>
+          ) : null}
           {flag && flag !== 'ok' ? (
             <>
               {' '}

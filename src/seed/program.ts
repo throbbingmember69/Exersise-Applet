@@ -128,6 +128,7 @@ export const SPEC_PROGRAM_SLOTS: readonly ProgramSlot[] = PROGRAM.flatMap(({ day
     label: r.label,
     defaultExerciseId: r.exerciseId,
     alternateExerciseIds: [...r.alternates],
+    optional: false,
     sets: r.sets,
     repMin: r.reps[0],
     repMax: r.reps[1],

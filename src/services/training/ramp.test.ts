@@ -62,6 +62,18 @@ describe('volume ramp prompts', () => {
     expect(ramps[1]).toMatchObject({ plannedNow: 6, plannedAfter: 7, bandMax: 16 })
   })
 
+  it('never offer a set on an optional slot', async () => {
+    const c = ctx()
+    await phase(c, 'bulk', '2026-09-01')
+    await c.db.programSlots.update('slot-upper-lat-pulldown', { optional: true })
+    const lats = (await getVolumeRamps(c, { today: d('2026-11-10') })).find(
+      (r) => r.muscleId === 'back',
+    )!
+    // The optional pulldown's 3 lat sets leave the plan, and the prompt goes elsewhere.
+    expect(lats.plannedNow).toBe(9)
+    expect(lats.slotId).not.toBe('slot-upper-lat-pulldown')
+  })
+
   it('accepting adds the set and logs it; the next prompt for that muscle waits three weeks', async () => {
     const c = ctx()
     await phase(c, 'bulk', '2026-09-01')

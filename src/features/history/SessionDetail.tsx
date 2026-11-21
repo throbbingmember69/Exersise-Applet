@@ -123,7 +123,7 @@ export default function SessionDetail() {
               {e.result.isPr ? <Badge tone="good">PR</Badge> : null}
             </div>
             {e.sets.length === 0 && e.voidedSets.length === 0 ? (
-              <p className={styles.why}>Skipped</p>
+              <p className={styles.why}>{e.optional ? 'Optional, skipped' : 'Skipped'}</p>
             ) : (
               <ol className={styles.sets}>
                 {e.sets.map((s) => (

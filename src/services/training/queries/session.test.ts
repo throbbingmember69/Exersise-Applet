@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { finishSession, logSet, startSession } from '../session'
 import { insertSession, type SessionSpec } from '../testFixtures'
 import { getLoggerView, getSessionDetail, getSessionSummary, listSessions } from './session'
 import { logDay, sets, testCtxPool, type TestCtx } from './testHelpers'
@@ -534,5 +535,51 @@ describe('getSessionDetail', () => {
     expect(detail).toMatchObject({ counted: false, voided: true, edited: true })
     expect(new Set(detail.exercises.map((e) => e.result.outcome))).toEqual(new Set(['not_tracked']))
     expect(await getSessionDetail(c, 'missing')).toBeNull()
+  })
+})
+
+describe('optional exercises', () => {
+  it('are snapshotted, badged and left out of the planned-set count; skipping one is no miss', async () => {
+    const c = pool.make()
+    await c.db.programSlots.update('slot-lower-a-6', { optional: true }) // cable crunch, 3 sets
+    const id = await startSession(c, { gymId: 'gym-1', programDayId: 'day-lower-a' })
+    let view = (await getLoggerView(c, id))!
+    const crunch = view.exercises.find((e) => e.exerciseId === 'ex-cable-crunch')!
+    expect(crunch.optional).toBe(true)
+    expect(crunch.prescription.optional).toBe(true)
+    expect(view.exercises.filter((e) => e.optional)).toHaveLength(1)
+    // Lower A plans 18 sets; the crunch's 3 are extras.
+    expect(view.prescribedSetCount).toBe(15)
+
+    await logSet(c, { sessionExerciseId: crunch.sessionExerciseId, loadLb: 160, reps: 12 })
+    const squat = view.exercises.find((e) => e.exerciseId === 'ex-smith-squat')!
+    await logSet(c, { sessionExerciseId: squat.sessionExerciseId, loadLb: 220, reps: 8 })
+    view = (await getLoggerView(c, id))!
+    expect([
+      view.requiredWorkingSetCount,
+      view.optionalWorkingSetCount,
+      view.workingSetCount,
+    ]).toEqual([1, 1, 2])
+    // Required snapshots carry no optional flag at all.
+    expect(
+      view.exercises.find((e) => e.exerciseId === 'ex-smith-squat')!.prescription,
+    ).not.toHaveProperty('optional')
+
+    await finishSession(c, id, {})
+    // Making the calf slot optional now leaves the finished session's snapshot required.
+    await c.db.programSlots.update('slot-lower-a-5', { optional: true })
+    const summary = (await getSessionSummary(c, id))!
+    expect(summary.exercises.find((e) => e.exerciseId === 'ex-standing-calf-raise')).toMatchObject({
+      optional: false,
+      outcome: 'skipped',
+    })
+    expect(summary.exercises.find((e) => e.exerciseId === 'ex-cable-crunch')).toMatchObject({
+      optional: true,
+    })
+    const next = await startSession(c, { gymId: 'gym-1', programDayId: 'day-lower-a' })
+    const calf = (await getLoggerView(c, next))!.exercises.find(
+      (e) => e.exerciseId === 'ex-standing-calf-raise',
+    )
+    expect(calf?.optional).toBe(true)
   })
 })

@@ -93,6 +93,7 @@ export default function ExerciseCard({
           ) : null}
         </div>
         <div>
+          {ex.optional ? <Badge tone="neutral">Optional</Badge> : null}
           {ex.badge === 'set_load' ? <Badge tone="warn">Set load</Badge> : null}
           {ex.badge === 'recalibrate' ? <Badge tone="warn">Recalibrate</Badge> : null}
           {ex.done ? <Badge tone="good">Done</Badge> : null}

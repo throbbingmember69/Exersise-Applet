@@ -86,6 +86,7 @@ describe('getProgramOverview', () => {
       muscleId: 'quads',
       name: 'Quads',
       sets: 13.5,
+      optional: 0,
       band: { min: 10, max: 20 },
       bandIsDefault: true,
       flag: 'ok',
@@ -93,6 +94,19 @@ describe('getProgramOverview', () => {
       lagging: false,
     })
     expect(overview.sessionCap).toBe(11)
+  })
+
+  it('shows optional sets apart from the required plan, per day and per muscle', async () => {
+    const c = ctx()
+    await c.db.programSlots.update('slot-lower-a-6', { optional: true }) // cable crunch 3
+    const overview = await getProgramOverview(c)
+    const lowerA = overview.days.find((d) => d.day.id === 'day-lower-a')!
+    expect([lowerA.volume.totalSets, lowerA.optionalSets]).toEqual([15, 3])
+    expect([overview.weekly.totalSets, overview.weekly.optionalSets]).toEqual([91, 3])
+    expect(overview.weekly.muscles.find((m) => m.muscleId === 'abs')).toMatchObject({
+      sets: 2,
+      optional: 3,
+    })
   })
 
   it('lists days in order with their slots resolved for the gym and per-day volume', async () => {

@@ -69,12 +69,15 @@ export function volumeRampViews(
     slot,
     exercise: model.resolveSlotExercise(slot, gym).exercise,
   }))
-  const rampSlots: RampSlot[] = resolved.map(({ slot, exercise }) => ({
-    slotId: slot.id,
-    programDayId: slot.programDayId,
-    sets: slot.sets,
-    weights: exercise.muscleWeights,
-  }))
+  // An add-a-set prompt goes to a required slot: optional sets don't count toward the plan.
+  const rampSlots: RampSlot[] = resolved
+    .filter(({ slot }) => !slot.optional)
+    .map(({ slot, exercise }) => ({
+      slotId: slot.id,
+      programDayId: slot.programDayId,
+      sets: slot.sets,
+      weights: exercise.muscleWeights,
+    }))
   const planned = plannedWeeklyVolume(
     slots,
     (slot) => resolved.find((r) => r.slot.id === slot.id)?.exercise,

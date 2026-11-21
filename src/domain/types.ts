@@ -155,6 +155,11 @@ export interface ProgramSlot extends Regime {
   defaultExerciseId: string
   /** Suggested swaps (e.g. "Deadlift or Romanian deadlift"). Any library exercise is allowed. */
   alternateExerciseIds: string[]
+  /**
+   * An extra the lifter may skip: it counts toward volume and progresses when done, but isn't part
+   * of the planned volume or the workout's planned-set count.
+   */
+  optional: boolean
   note: string
   archivedAt: EpochMs | null
 }
@@ -216,6 +221,8 @@ export interface SessionPrescription extends Regime {
   /** Sets before a deload cut (equals `sets` outside deloads). */
   setsBeforeDeload: number
   stepLb: number
+  /** The slot was optional when the session started (absent in older snapshots: required). */
+  optional?: boolean
 }
 
 export interface SessionSuggestion {

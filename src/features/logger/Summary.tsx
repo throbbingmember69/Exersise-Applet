@@ -39,7 +39,7 @@ function outcomeBadge(
     case 'calibrated':
       return { text: 'Calibrated', tone: 'accent' }
     case 'skipped':
-      return { text: 'Skipped', tone: 'neutral' }
+      return { text: e.optional ? 'Optional, skipped' : 'Skipped', tone: 'neutral' }
     case 'deload':
       return { text: 'Deload', tone: 'neutral' }
     case 'not_tracked':

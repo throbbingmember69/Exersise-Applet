@@ -53,7 +53,7 @@ describe('getVolumeDashboard: planned', () => {
     const dash = await getVolumeDashboard(c, { weekOf: d('2026-09-30'), today: d('2026-09-30') })
     expect(dash.muscles.map((m) => [m.muscleId, m.planned])).toEqual(SPEC_WEEKLY_TOTALS)
     expect(dash.muscles.map((m) => m.plannedFlag)).toEqual(SPEC_FLAGS)
-    expect(dash.planned).toEqual({ totalSets: 94, capWarnings: [] })
+    expect(dash.planned).toEqual({ totalSets: 94, optionalSets: 0, capWarnings: [] })
     expect(dash).toMatchObject({ gymId: 'gym-1', gymName: 'Gym 1', sessionCap: 11 })
     expect(dash.muscles[0]).toEqual({
       muscleId: 'quads',
@@ -62,6 +62,7 @@ describe('getVolumeDashboard: planned', () => {
       bandMax: 20,
       exemptLow: false,
       planned: 13.5,
+      plannedOptional: 0,
       plannedFlag: 'ok',
       logged: 0,
       loggedFlag: null,
@@ -110,6 +111,35 @@ describe('getVolumeDashboard: planned', () => {
     expect(planned(byDefault)).toMatchObject({ front_delts: 7, triceps: 14.5 })
   })
 
+  it('leaves optional slots out of the plan, shows them apart, and flags on what the plan offers', async () => {
+    const c = pool.make()
+    await c.db.programSlots.update('slot-push-6', { optional: true }) // overhead ext 3 × triceps
+    const dash = await getVolumeDashboard(c, { weekOf: d('2026-09-30'), today: d('2026-09-30') })
+    expect(dash.planned).toMatchObject({ totalSets: 91, optionalSets: 3 })
+    expect(dash.muscles.find((m) => m.muscleId === 'triceps')).toMatchObject({
+      planned: 13,
+      plannedOptional: 3,
+      plannedFlag: 'ok',
+    })
+    // Only the optional slot trains it: 0 planned, flagged on the 3 on offer.
+    await c.db.programSlots.update('slot-push-6', { optional: false })
+    await c.db.programSlots.update('slot-lower-a-6', { optional: true })
+    await c.db.programSlots.update('slot-lower-b-7', { optional: true })
+    await c.db.muscles.update('abs', { exemptLow: false })
+    const abs = (
+      await getVolumeDashboard(c, { weekOf: d('2026-09-30'), today: d('2026-09-30') })
+    ).muscles.find((m) => m.muscleId === 'abs')
+    expect(abs).toMatchObject({ planned: 0, plannedOptional: 5, plannedFlag: 'low' })
+  })
+
+  it('counts optional slots toward the per-session cap', async () => {
+    const c = pool.make()
+    await c.db.programSlots.update('slot-push-6', { sets: 6, optional: true })
+    const dash = await getVolumeDashboard(c, { weekOf: d('2026-09-30'), today: d('2026-09-30') })
+    expect(dash.planned.capWarnings.map((w) => w.programDayId)).toEqual(['day-push'])
+    expect(dash.planned).toMatchObject({ totalSets: 91, optionalSets: 6 })
+  })
+
   it('warns when a program day plans a muscle over the session cap', async () => {
     const c = pool.make()
     // 6 sets of the overhead triceps extension: Push triceps 9.5 → 12.5.
@@ -117,6 +147,7 @@ describe('getVolumeDashboard: planned', () => {
     const dash = await getVolumeDashboard(c, { weekOf: d('2026-09-30'), today: d('2026-09-30') })
     expect(dash.planned).toEqual({
       totalSets: 97,
+      optionalSets: 0,
       capWarnings: [
         {
           programDayId: 'day-push',

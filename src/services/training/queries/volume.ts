@@ -8,7 +8,9 @@ import {
   loggedSessionVolume,
   muscleFlags,
   overSessionCap,
+  addVolume,
   plannedDayVolume,
+  plannedOptionalVolume,
   plannedWeeklyVolume,
   resolveBand,
   weeklyLoggedVolume,
@@ -36,8 +38,14 @@ export interface VolumeMuscleRow {
   bandMax: number
   /** Never flagged 'low'. */
   exemptLow: boolean
+  /** The required plan (optional slots count only once done). */
   planned: number
-  /** Against a complete week (null = 'low' suppressed for an exempt muscle). */
+  /** Fractional sets the optional slots add when done. */
+  plannedOptional: number
+  /**
+   * Required + optional sets (what the plan offers) against a complete week (null = 'low'
+   * suppressed for an exempt muscle).
+   */
   plannedFlag: VolumeFlag | null
   logged: number
   /** null while 'low' is suppressed: exempt muscle, unfinished week, or deload week. */
@@ -83,7 +91,7 @@ export interface VolumeDashboard {
   }
   /** Active muscles in sortOrder. */
   muscles: VolumeMuscleRow[]
-  planned: { totalSets: number; capWarnings: DayCapWarning[] }
+  planned: { totalSets: number; optionalSets: number; capWarnings: DayCapWarning[] }
   logged: { totalSets: number; capWarnings: SessionCapWarning[] }
 }
 
@@ -114,12 +122,14 @@ export async function getVolumeDashboard(
       ? model.resolveSlotExercise(slot, gym ?? '').exercise
       : null
   const planned = plannedWeeklyVolume(q.data.programSlots, resolve, q.data.programDays)
-  const plannedFlags = muscleFlags(planned.byMuscle, muscles, settings, {
+  const optional = plannedOptionalVolume(q.data.programSlots, resolve, q.data.programDays)
+  const plannedFlags = muscleFlags(addVolume(planned, optional).byMuscle, muscles, settings, {
     weekComplete: true,
     deloadWeek: false,
   })
   const dayWarnings = activeDays(q.data.programDays).flatMap((day): DayCapWarning[] => {
-    const volume = plannedDayVolume(model.slotsOf(day.id), resolve)
+    // A day must stay under the cap even when its optional slots are done too.
+    const volume = plannedDayVolume(model.slotsOf(day.id), resolve, 'all')
     const over = overSessionCap(volume.byMuscle, cap)
     return over.length === 0
       ? []
@@ -199,12 +209,17 @@ export async function getVolumeDashboard(
         bandMax: band.max,
         exemptLow: m.exemptLow,
         planned: planned.byMuscle.get(m.id) ?? 0,
+        plannedOptional: optional.byMuscle.get(m.id) ?? 0,
         plannedFlag: plannedFlags.get(m.id) ?? null,
         logged: loggedByMuscle.get(m.id) ?? 0,
         loggedFlag: loggedFlags.get(m.id) ?? null,
       }
     }),
-    planned: { totalSets: planned.totalSets, capWarnings: dayWarnings },
+    planned: {
+      totalSets: planned.totalSets,
+      optionalSets: optional.totalSets,
+      capWarnings: dayWarnings,
+    },
     logged: { totalSets: week?.totalSets ?? 0, capWarnings: sessionWarnings },
   }
 }

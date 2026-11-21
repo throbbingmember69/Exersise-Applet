@@ -127,6 +127,7 @@ export async function startSession(ctx: ServiceCtx, input: StartSessionInput): P
             swappedFromExerciseId: swapKind === 'gym_override' ? slot.defaultExerciseId : null,
             regime: slot,
             sets: p.sets,
+            optional: slot.optional,
             suggestion: suggestionOf(p),
             bodyweightLb: bodyweight.weightLb,
             createdAt: now,
@@ -380,6 +381,7 @@ export async function swapExercise(
       ...identity,
       regime,
       sets: p.sets,
+      optional: se.prescription.optional === true,
       suggestion: suggestionOf(p),
       bodyweightLb: session.bodyweightLb,
       createdAt: now,
@@ -538,6 +540,8 @@ interface SnapshotArgs {
   regime: Regime
   /** Sets actually prescribed (fewer in a deload). */
   sets: number
+  /** The slot is optional (snapshotted only when true; absent means required). */
+  optional?: boolean
   suggestion: SessionSuggestion
   /** The session's bodyweight: a bodyweight-plus row without one gets a 'no_bodyweight' notice. */
   bodyweightLb: number | null
@@ -574,6 +578,7 @@ function buildSnapshot(model: TrainingModel, a: SnapshotArgs): SessionExercise {
       sets: a.sets,
       setsBeforeDeload: a.regime.sets,
       stepLb: model.stepFor(exercise.id, a.gymId),
+      ...(a.optional ? { optional: true } : {}),
     },
     muscleWeights: { ...exercise.muscleWeights },
     suggestion,

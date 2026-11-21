@@ -209,6 +209,7 @@ export function applyUpdate2026_10(t: ProgramTables): ProgramTables {
       defaultExerciseId: abductionId,
       alternateExerciseIds: isActive(kickback) && kickback !== abductionId ? [kickback] : [],
       ...ABDUCTION_REGIME,
+      optional: false,
       note: '',
       archivedAt: null,
     }

@@ -1,6 +1,7 @@
 // Weekly volume accounting (spec "Volume accounting"): fractional sets per muscle = Σ sets × weight,
 // with weight 1.0 for the muscle an exercise mainly trains and 0.5 for an assisting muscle. A
-// unilateral set covers both sides and counts once. Planned volume sums the program's active slots;
+// unilateral set covers both sides and counts once. Planned volume sums the program's active slots
+// (required ones by default: optional slots count only once they're done, i.e. as logged volume);
 // logged volume sums working sets (not warm-ups, not voided) with the session snapshot's weights,
 // grouped into calendar training weeks. Flags (audit findings #23, #39): 'low' strictly below the
 // muscle's band, except for exempt muscles, unfinished weeks and deload weeks; 'high' strictly above
@@ -30,8 +31,20 @@ export interface VolumeTotals {
   totalSets: number
 }
 
-/** The slot fields planned volume reads. */
-export type PlannedSlot = Pick<ProgramSlot, 'programDayId' | 'sets' | 'archivedAt'>
+/** The slot fields planned volume reads (a missing `optional` means a required slot). */
+export type PlannedSlot = Pick<ProgramSlot, 'programDayId' | 'sets' | 'archivedAt'> &
+  Partial<Pick<ProgramSlot, 'optional'>>
+
+/**
+ * Which slots planned volume counts: 'required' (the default: the plan you must do), 'optional'
+ * (the extras on offer) or 'all' (the most a day can hold, for the per-session cap).
+ */
+export type PlannedInclude = 'required' | 'optional' | 'all'
+
+function included(slot: PlannedSlot, include: PlannedInclude): boolean {
+  const optional = slot.optional === true
+  return include === 'all' || (include === 'optional' ? optional : !optional)
+}
 
 /** The exercise filling a slot (after any gym override), or null/undefined if none resolves. */
 export type SlotExerciseResolver<S> = (
@@ -41,26 +54,52 @@ export type SlotExerciseResolver<S> = (
 /**
  * Planned weekly volume of the program. Archived slots are skipped; when `days` is given, so are
  * slots on archived or unknown days. A slot whose exercise doesn't resolve adds sets but no volume.
+ * Only required slots count unless `include` says otherwise.
  */
 export function plannedWeeklyVolume<S extends PlannedSlot>(
   slots: readonly S[],
   resolveExercise: SlotExerciseResolver<S>,
   days?: readonly Pick<ProgramDay, 'id' | 'archivedAt'>[],
+  include: PlannedInclude = 'required',
 ): VolumeTotals {
-  if (!days) return sumSlots(slots, resolveExercise)
+  const picked = slots.filter((s) => included(s, include))
+  if (!days) return sumSlots(picked, resolveExercise)
   const activeDays = new Set(days.filter((d) => d.archivedAt === null).map((d) => d.id))
   return sumSlots(
-    slots.filter((s) => activeDays.has(s.programDayId)),
+    picked.filter((s) => activeDays.has(s.programDayId)),
     resolveExercise,
   )
 }
 
-/** Planned volume of one day's slots, for the per-session cap warning. */
+/** The optional slots' weekly volume: what the program offers on top of its required sets. */
+export function plannedOptionalVolume<S extends PlannedSlot>(
+  slots: readonly S[],
+  resolveExercise: SlotExerciseResolver<S>,
+  days?: readonly Pick<ProgramDay, 'id' | 'archivedAt'>[],
+): VolumeTotals {
+  return plannedWeeklyVolume(slots, resolveExercise, days, 'optional')
+}
+
+/**
+ * Planned volume of one day's slots. The per-session cap warning passes 'all': a day must stay
+ * under the cap even when its optional slots are done too.
+ */
 export function plannedDayVolume<S extends PlannedSlot>(
   slots: readonly S[],
   resolveExercise: SlotExerciseResolver<S>,
+  include: PlannedInclude = 'required',
 ): VolumeTotals {
-  return sumSlots(slots, resolveExercise)
+  return sumSlots(
+    slots.filter((s) => included(s, include)),
+    resolveExercise,
+  )
+}
+
+/** Two volume totals added together (e.g. required + optional planned volume). */
+export function addVolume(a: VolumeTotals, b: VolumeTotals): VolumeTotals {
+  const byMuscle = new Map(a.byMuscle)
+  for (const [muscle, sets] of b.byMuscle) byMuscle.set(muscle, (byMuscle.get(muscle) ?? 0) + sets)
+  return { byMuscle, totalSets: a.totalSets + b.totalSets }
 }
 
 /** Working sets per session exercise; warm-ups and voided sets don't count. */

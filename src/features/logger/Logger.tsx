@@ -110,7 +110,7 @@ export default function Logger() {
     view.session.bodyweightLb === null &&
     view.exercises.some((e) => e.loadType === 'bodyweight_plus')
   const inSession = view.exercises.map((e) => e.exerciseId)
-  const missing = Math.max(0, view.prescribedSetCount - view.workingSetCount)
+  const missing = Math.max(0, view.prescribedSetCount - view.requiredWorkingSetCount)
 
   const onFinish = async () => {
     if (!(await finish.tryRun(id, { jointPain, note: note.trim() }))) return
@@ -131,7 +131,8 @@ export default function Logger() {
         }
       />
       <p className={`${styles.muted} ${styles.small}`} style={{ marginTop: '-0.5rem' }}>
-        {view.gymName} · {view.workingSetCount} of {view.prescribedSetCount} sets
+        {view.gymName} · {view.requiredWorkingSetCount} of {view.prescribedSetCount} sets
+        {view.optionalWorkingSetCount > 0 ? ` · +${view.optionalWorkingSetCount} optional` : ''}
         {view.session.isDeload ? ' · deload' : ''}
       </p>
       <Stack>
@@ -209,7 +210,7 @@ export default function Logger() {
         <div className={kit.stack}>
           <p className={styles.muted}>
             {missing > 0
-              ? `${missing} planned ${missing === 1 ? 'set is' : 'sets are'} not logged. Unlogged exercises are skipped and keep their suggestion.`
+              ? `${missing} planned ${missing === 1 ? 'set is' : 'sets are'} not logged. Unlogged exercises are skipped and keep their suggestion. Optional exercises don't count here.`
               : 'All planned sets logged.'}
           </p>
           {finishing ? <MissingRir exercises={view.exercises} unit={units} /> : null}

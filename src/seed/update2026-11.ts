@@ -179,6 +179,7 @@ export function applyUpdate2026_11(t: ProgramTables): ProgramTables {
       defaultExerciseId: n.exerciseId,
       alternateExerciseIds: n.alternates.filter((id) => isActive(id) && id !== n.exerciseId),
       ...n.regime,
+      optional: false,
       note: '',
       archivedAt: null,
     }

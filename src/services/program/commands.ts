@@ -144,6 +144,8 @@ export interface SlotInput extends Regime {
   /** Defaults to the exercise's name. */
   label?: string
   alternateExerciseIds?: readonly string[]
+  /** An extra the lifter may skip (counts when done). Default false. */
+  optional?: boolean
   note?: string
 }
 
@@ -174,6 +176,7 @@ export async function createSlot(
       defaultExerciseId: exercise.id,
       alternateExerciseIds: alternates,
       ...regime,
+      optional: checkOptional(input.optional) ?? false,
       note,
       archivedAt: null,
     })
@@ -190,6 +193,8 @@ export interface SlotPatch extends Partial<Regime> {
    */
   defaultExerciseId?: string
   alternateExerciseIds?: readonly string[]
+  /** An extra the lifter may skip (counts when done). */
+  optional?: boolean
 }
 
 export async function updateSlot(ctx: ServiceCtx, id: string, patch: SlotPatch): Promise<void> {
@@ -216,6 +221,8 @@ export async function updateSlot(ctx: ServiceCtx, id: string, patch: SlotPatch):
     }
     if (label !== undefined) changes.label = label || exercises.get(defaultId)!.name
     if (note !== undefined) changes.note = note
+    const optional = checkOptional(patch.optional)
+    if (optional !== undefined) changes.optional = optional
     await db.programSlots.update(id, changes)
   })
 }
@@ -1063,4 +1070,12 @@ async function writeOrder<T extends { id: string; order: number }>(
   write: (id: string, order: number) => Promise<unknown>,
 ): Promise<void> {
   for (const [order, row] of rows.entries()) if (row.order !== order) await write(row.id, order)
+}
+
+function checkOptional(value: unknown): boolean | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'boolean') {
+    throw new ServiceError('invalid_optional', 'Optional must be yes or no.')
+  }
+  return value
 }

@@ -73,7 +73,7 @@ export default function Program() {
                 key={d.day.id}
                 to={`/program/day/${d.day.id}${gym ? `?gym=${gym}` : ''}`}
                 label={d.day.name}
-                hint={`${d.day.weekday !== null ? WEEKDAYS[d.day.weekday] + ' · ' : ''}${d.slots.filter((s) => !s.archived).length} exercises · ${fmt(d.volume.totalSets)} sets`}
+                hint={`${d.day.weekday !== null ? WEEKDAYS[d.day.weekday] + ' · ' : ''}${d.slots.filter((s) => !s.archived).length} exercises · ${fmt(d.volume.totalSets)} sets${d.optionalSets > 0 ? ` + ${fmt(d.optionalSets)} optional` : ''}`}
                 trailing={
                   d.overSessionCap.length > 0 ? <Badge tone="warn">Over cap</Badge> : undefined
                 }
@@ -85,7 +85,13 @@ export default function Program() {
         </Button>
 
         {overview ? (
-          <Card title={`Planned per week · ${fmt(overview.weekly.totalSets)} sets`}>
+          <Card
+            title={`Planned per week · ${fmt(overview.weekly.totalSets)} sets${
+              overview.weekly.optionalSets > 0
+                ? ` + ${fmt(overview.weekly.optionalSets)} optional`
+                : ''
+            }`}
+          >
             <p className={styles.hint}>
               Fractional sets per muscle at {overview.gym?.name}. Tap a muscle to change its band or
               mark it lagging.
@@ -104,7 +110,10 @@ export default function Program() {
                       ) : null}
                     </span>
                     <span>
-                      {fmt(m.sets)}{' '}
+                      {fmt(m.sets)}
+                      {m.optional > 0 ? (
+                        <span className={styles.hint}> +{fmt(m.optional)} opt.</span>
+                      ) : null}{' '}
                       <span className={styles.hint}>
                         / {m.band.min}–{m.band.max}
                       </span>{' '}
